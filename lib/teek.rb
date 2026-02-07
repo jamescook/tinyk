@@ -39,8 +39,23 @@ module Teek
       @interp.tcl_invoke(*args)
     end
 
-    def register_callback(proc)
-      @interp.register_callback(proc)
+    def register_callback(callable)
+      wrapped = proc { |*args|
+        caught = nil
+        catch(:teek_break) do
+          catch(:teek_continue) do
+            catch(:teek_return) do
+              callable.call(*args)
+              caught = :_none
+            end
+            caught ||= :return
+          end
+          caught ||= :continue
+        end
+        caught ||= :break
+        caught == :_none ? nil : caught
+      }
+      @interp.register_callback(wrapped)
     end
 
     def unregister_callback(id)

@@ -1,34 +1,36 @@
 # frozen_string_literal: true
 
-# Tests for Teek::CallbackBreak, CallbackContinue, CallbackReturn.
+# Tests for callback control flow via throw/catch.
 #
-# These exceptions translate to TCL_BREAK, TCL_CONTINUE, TCL_RETURN
-# when raised inside a Ruby callback invoked from Tcl.
+# throw :teek_break    → TCL_BREAK   (stops event propagation)
+# throw :teek_continue → TCL_CONTINUE
+# throw :teek_return   → TCL_RETURN
 
 require 'minitest/autorun'
 require_relative 'tk_test_helper'
 
-class TestCallbackExceptions < Minitest::Test
+class TestCallbackControlFlow < Minitest::Test
   include TeekTestHelper
 
-  # CallbackBreak in a bind handler should stop event propagation
+  # throw :teek_break in a bind handler should stop event propagation
   # to subsequent binding tags (same as Tcl "break").
-  def test_callback_break_stops_event_propagation
-    assert_tk_app("CallbackBreak should stop event propagation",
-                  method(:app_callback_break))
+  def test_break_stops_event_propagation
+    assert_tk_app("throw :teek_break should stop event propagation",
+                  method(:app_break_stops_propagation))
   end
 
-  def app_callback_break
+  def app_break_stops_propagation
     first_fired = false
     second_fired = false
 
+    app.tcl_eval("wm deiconify .")
     app.tcl_eval("entry .e")
     app.tcl_eval("pack .e")
 
-    # Bind on the widget itself - fires first, raises break
+    # Bind on the widget itself - fires first, throws break
     cb1 = app.register_callback(proc { |*|
       first_fired = true
-      raise Teek::CallbackBreak
+      throw :teek_break
     })
     app.tcl_eval("bind .e <Key-a> {ruby_callback #{cb1}}")
 
@@ -39,7 +41,7 @@ class TestCallbackExceptions < Minitest::Test
     app.tcl_eval("bind Entry <Key-a> {ruby_callback #{cb2}}")
 
     # Generate the event
-    app.tcl_eval("focus .e")
+    app.tcl_eval("focus -force .e")
     app.update
     app.tcl_eval("event generate .e <Key-a>")
     app.update
@@ -51,38 +53,62 @@ class TestCallbackExceptions < Minitest::Test
     app.tcl_eval("bind Entry <Key-a> {}")
   end
 
-  # CallbackReturn in a bind handler should stop propagation
-  # but with TCL_RETURN semantics (like Tcl "return").
-  def test_callback_return
-    assert_tk_app("CallbackReturn should return TCL_RETURN",
-                  method(:app_callback_return))
+  # throw :teek_return should not crash - returns TCL_RETURN to Tcl.
+  def test_return_does_not_crash
+    assert_tk_app("throw :teek_return should not crash",
+                  method(:app_return_does_not_crash))
   end
 
-  def app_callback_return
+  def app_return_does_not_crash
     fired = false
 
     cb = app.register_callback(proc { |*|
       fired = true
-      raise Teek::CallbackReturn
+      throw :teek_return
     })
 
-    # Use a button command - CallbackReturn should not crash
     app.tcl_eval("button .b_ret -command {ruby_callback #{cb}}")
     app.tcl_eval(".b_ret invoke")
 
     raise "callback did not fire" unless fired
   end
 
-  # Verify the exception classes exist and have correct hierarchy
-  def test_exception_hierarchy
-    assert_tk_app("Callback exceptions should be StandardError subclasses",
-                  method(:app_exception_hierarchy))
+  # Normal callbacks (no throw) should work unchanged.
+  def test_normal_callback_unaffected
+    assert_tk_app("normal callback should work",
+                  method(:app_normal_callback))
   end
 
-  def app_exception_hierarchy
-    [Teek::CallbackBreak, Teek::CallbackContinue, Teek::CallbackReturn].each do |klass|
-      raise "#{klass} is not a StandardError" unless klass < StandardError
-      raise "#{klass} should not be a RuntimeError" if klass < RuntimeError
-    end
+  def app_normal_callback
+    result = nil
+
+    cb = app.register_callback(proc { |*|
+      result = "hello"
+    })
+
+    app.tcl_eval("button .b_norm -command {ruby_callback #{cb}}")
+    app.tcl_eval(".b_norm invoke")
+
+    raise "callback did not fire, got #{result.inspect}" unless result == "hello"
+  end
+
+  # Real exceptions should still propagate as errors, not be
+  # confused with control flow.
+  def test_real_exception_is_tcl_error
+    assert_tk_app("real exception should become Tcl error",
+                  method(:app_real_exception))
+  end
+
+  def app_real_exception
+    cb = app.register_callback(proc { |*|
+      raise "boom"
+    })
+
+    # Tcl should catch this as an error
+    result = app.tcl_eval("catch {ruby_callback #{cb}} errmsg")
+    raise "expected Tcl error (1), got #{result}" unless result == "1"
+
+    msg = app.tcl_eval("set errmsg")
+    raise "error message lost, got #{msg.inspect}" unless msg.include?("boom")
   end
 end

@@ -151,9 +151,6 @@ static VALUE cQueue = Qundef;
 static int rbtk_callback_depth = 0;
 
 /* Callback control flow exceptions - for signaling break/continue/return to Tcl */
-static VALUE eCallbackBreak;
-static VALUE eCallbackContinue;
-static VALUE eCallbackReturn;
 
 /* ---------------------------------------------------------
  * Memory management
@@ -437,22 +434,18 @@ ruby_callback_proc(ClientData clientData, Tcl_Interp *interp,
             rb_exc_raise(errinfo);
         }
 
-        /* Callback control flow - translate to Tcl return codes */
-        if (rb_obj_is_kind_of(errinfo, eCallbackBreak)) {
-            return TCL_BREAK;
-        }
-        if (rb_obj_is_kind_of(errinfo, eCallbackContinue)) {
-            return TCL_CONTINUE;
-        }
-        if (rb_obj_is_kind_of(errinfo, eCallbackReturn)) {
-            return TCL_RETURN;
-        }
-
         /* Other exceptions: convert to Tcl error */
         VALUE msg = rb_funcall(errinfo, rb_intern("message"), 0);
         Tcl_SetResult(interp, StringValueCStr(msg), TCL_VOLATILE);
         return TCL_ERROR;
     }
+
+    /* Check return value for Tcl control flow signals.
+     * Callbacks wrapped by Teek::App#register_callback use catch/throw
+     * and return these symbols when the user throws :teek_break etc. */
+    if (result == ID2SYM(rb_intern("break"))) return TCL_BREAK;
+    if (result == ID2SYM(rb_intern("continue"))) return TCL_CONTINUE;
+    if (result == ID2SYM(rb_intern("return"))) return TCL_RETURN;
 
     /* Return result to Tcl */
     if (!NIL_P(result)) {
@@ -1417,10 +1410,10 @@ Init_tcltklib(void)
     /* Teek::TclError exception */
     eTclError = rb_define_class_under(mTeek, "TclError", rb_eRuntimeError);
 
-    /* Callback control flow exceptions */
-    eCallbackBreak = rb_define_class_under(mTeek, "CallbackBreak", rb_eStandardError);
-    eCallbackContinue = rb_define_class_under(mTeek, "CallbackContinue", rb_eStandardError);
-    eCallbackReturn = rb_define_class_under(mTeek, "CallbackReturn", rb_eStandardError);
+    /* Callback control flow symbols (used by Teek::App#register_callback catch/throw) */
+    rb_define_const(mTeek, "CALLBACK_BREAK", ID2SYM(rb_intern("teek_break")));
+    rb_define_const(mTeek, "CALLBACK_CONTINUE", ID2SYM(rb_intern("teek_continue")));
+    rb_define_const(mTeek, "CALLBACK_RETURN", ID2SYM(rb_intern("teek_return")));
 
     /* Module function for list operations */
     rb_define_module_function(mTeek, "merge_tklist", lib_merge_tklist, -1);
@@ -1478,10 +1471,6 @@ Init_tcltklib(void)
 
     /* Utility functions (tkutil.c) */
     Init_tkutil(cInterp);
-
-    /* Aliases for legacy API compatibility */
-    rb_define_alias(cInterp, "_eval", "tcl_eval");
-    rb_define_alias(cInterp, "_invoke", "tcl_invoke");
 
     /* Class methods for instance tracking */
     rb_define_singleton_method(cInterp, "instance_count", tcltkip_instance_count, 0);
