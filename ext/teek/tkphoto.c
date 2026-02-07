@@ -461,17 +461,17 @@ interp_photo_blank(VALUE self, VALUE photo_path)
 }
 
 /* ---------------------------------------------------------
- * Init_tkphoto - Register photo image methods on TclTkIp class
+ * Init_tkphoto - Register photo image methods on Teek::Interp class
  *
  * Called from Init_tcltklib in tcltkbridge.c
  * --------------------------------------------------------- */
 
 void
-Init_tkphoto(VALUE cTclTkIp)
+Init_tkphoto(VALUE cInterp)
 {
-    rb_define_method(cTclTkIp, "photo_put_block", interp_photo_put_block, -1);
-    rb_define_method(cTclTkIp, "photo_put_zoomed_block", interp_photo_put_zoomed_block, -1);
-    rb_define_method(cTclTkIp, "photo_get_image", interp_photo_get_image, -1);
-    rb_define_method(cTclTkIp, "photo_get_size", interp_photo_get_size, 1);
-    rb_define_method(cTclTkIp, "photo_blank", interp_photo_blank, 1);
+    rb_define_method(cInterp, "photo_put_block", interp_photo_put_block, -1);
+    rb_define_method(cInterp, "photo_put_zoomed_block", interp_photo_put_zoomed_block, -1);
+    rb_define_method(cInterp, "photo_get_image", interp_photo_get_image, -1);
+    rb_define_method(cInterp, "photo_get_size", interp_photo_get_size, 1);
+    rb_define_method(cInterp, "photo_blank", interp_photo_blank, 1);
 }

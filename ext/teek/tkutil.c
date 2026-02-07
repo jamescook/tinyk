@@ -179,16 +179,16 @@ interp_coords_to_window(VALUE self, VALUE root_x, VALUE root_y)
 }
 
 /* ---------------------------------------------------------
- * Init_tkutil - Register utility methods on TclTkIp class
+ * Init_tkutil - Register utility methods on Teek::Interp class
  *
  * Called from Init_tcltklib in tcltkbridge.c
  * --------------------------------------------------------- */
 
 void
-Init_tkutil(VALUE cTclTkIp)
+Init_tkutil(VALUE cInterp)
 {
-    rb_define_method(cTclTkIp, "tcl_split_list", interp_tcl_split_list, 1);
-    rb_define_method(cTclTkIp, "user_inactive_time", interp_user_inactive_time, 0);
-    rb_define_method(cTclTkIp, "get_root_coords", interp_get_root_coords, 1);
-    rb_define_method(cTclTkIp, "coords_to_window", interp_coords_to_window, 2);
+    rb_define_method(cInterp, "tcl_split_list", interp_tcl_split_list, 1);
+    rb_define_method(cInterp, "user_inactive_time", interp_user_inactive_time, 0);
+    rb_define_method(cInterp, "get_root_coords", interp_get_root_coords, 1);
+    rb_define_method(cInterp, "coords_to_window", interp_coords_to_window, 2);
 }

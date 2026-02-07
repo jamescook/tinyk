@@ -23,7 +23,7 @@ module Teek
     attr_reader :interp, :widgets
 
     def initialize(track_widgets: true, &block)
-      @interp = TclTkIp.new
+      @interp = Teek::Interp.new
       @interp.tcl_eval('package require Tk')
       @interp.tcl_eval('wm withdraw .')
       @widgets = {}

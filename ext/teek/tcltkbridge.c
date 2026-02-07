@@ -105,15 +105,15 @@ create_interp_bootstrap(void)
  */
 
 /* Module and class handles */
-static VALUE mTclTkLib;
-static VALUE cTclTkIp;
+static VALUE mTeek;
+static VALUE cInterp;
 VALUE eTclError;  /* Non-static: shared with tkphoto.c */
 
 /* Track if stubs have been initialized (once per process) */
 static int tcl_stubs_initialized = 0;
 
 /* Track live interpreter instances for multi-interp safety checks */
-static VALUE live_instances;  /* Ruby Array of live TclTkIp objects */
+static VALUE live_instances;  /* Ruby Array of live Teek::Interp objects */
 
 /* Forward declaration for Tcl callback command */
 static int ruby_callback_proc(ClientData, Tcl_Interp *, int, Tcl_Obj *const *);
@@ -151,9 +151,9 @@ static VALUE cQueue = Qundef;
 static int rbtk_callback_depth = 0;
 
 /* Callback control flow exceptions - for signaling break/continue/return to Tcl */
-static VALUE eTkCallbackBreak;
-static VALUE eTkCallbackContinue;
-static VALUE eTkCallbackReturn;
+static VALUE eCallbackBreak;
+static VALUE eCallbackContinue;
+static VALUE eCallbackReturn;
 
 /* ---------------------------------------------------------
  * Memory management
@@ -438,13 +438,13 @@ ruby_callback_proc(ClientData clientData, Tcl_Interp *interp,
         }
 
         /* Callback control flow - translate to Tcl return codes */
-        if (rb_obj_is_kind_of(errinfo, eTkCallbackBreak)) {
+        if (rb_obj_is_kind_of(errinfo, eCallbackBreak)) {
             return TCL_BREAK;
         }
-        if (rb_obj_is_kind_of(errinfo, eTkCallbackContinue)) {
+        if (rb_obj_is_kind_of(errinfo, eCallbackContinue)) {
             return TCL_CONTINUE;
         }
-        if (rb_obj_is_kind_of(errinfo, eTkCallbackReturn)) {
+        if (rb_obj_is_kind_of(errinfo, eCallbackReturn)) {
             return TCL_RETURN;
         }
 
@@ -1254,7 +1254,7 @@ interp_create_slave(int argc, VALUE *argv, VALUE self)
     }
 
     /* Wrap in a new TclTkIp Ruby object */
-    new_ip = TypedData_Make_Struct(cTclTkIp, struct tcltk_interp,
+    new_ip = TypedData_Make_Struct(cInterp, struct tcltk_interp,
                                    &interp_type, slave);
     slave->interp = slave_interp;
     slave->deleted = 0;
@@ -1403,87 +1403,87 @@ Init_tcltklib(void)
     cQueue = rb_path2class("Thread::Queue");
     rb_gc_register_address(&cQueue);
 
-    /* TclTkLib module */
-    mTclTkLib = rb_define_module("TclTkLib");
+    /* Teek module (may already exist from Ruby side) */
+    mTeek = rb_define_module("Teek");
 
     /* Event flags as constants */
-    rb_define_const(mTclTkLib, "WINDOW_EVENTS", INT2NUM(TCL_WINDOW_EVENTS));
-    rb_define_const(mTclTkLib, "FILE_EVENTS", INT2NUM(TCL_FILE_EVENTS));
-    rb_define_const(mTclTkLib, "TIMER_EVENTS", INT2NUM(TCL_TIMER_EVENTS));
-    rb_define_const(mTclTkLib, "IDLE_EVENTS", INT2NUM(TCL_IDLE_EVENTS));
-    rb_define_const(mTclTkLib, "ALL_EVENTS", INT2NUM(TCL_ALL_EVENTS));
-    rb_define_const(mTclTkLib, "DONT_WAIT", INT2NUM(TCL_DONT_WAIT));
+    rb_define_const(mTeek, "WINDOW_EVENTS", INT2NUM(TCL_WINDOW_EVENTS));
+    rb_define_const(mTeek, "FILE_EVENTS", INT2NUM(TCL_FILE_EVENTS));
+    rb_define_const(mTeek, "TIMER_EVENTS", INT2NUM(TCL_TIMER_EVENTS));
+    rb_define_const(mTeek, "IDLE_EVENTS", INT2NUM(TCL_IDLE_EVENTS));
+    rb_define_const(mTeek, "ALL_EVENTS", INT2NUM(TCL_ALL_EVENTS));
+    rb_define_const(mTeek, "DONT_WAIT", INT2NUM(TCL_DONT_WAIT));
 
-    /* TclTkLib::TclError exception */
-    eTclError = rb_define_class_under(mTclTkLib, "TclError", rb_eRuntimeError);
+    /* Teek::TclError exception */
+    eTclError = rb_define_class_under(mTeek, "TclError", rb_eRuntimeError);
 
-    /* Callback control flow exceptions (top-level for compatibility) */
-    eTkCallbackBreak = rb_define_class("TkCallbackBreak", rb_eStandardError);
-    eTkCallbackContinue = rb_define_class("TkCallbackContinue", rb_eStandardError);
-    eTkCallbackReturn = rb_define_class("TkCallbackReturn", rb_eStandardError);
+    /* Callback control flow exceptions */
+    eCallbackBreak = rb_define_class_under(mTeek, "CallbackBreak", rb_eStandardError);
+    eCallbackContinue = rb_define_class_under(mTeek, "CallbackContinue", rb_eStandardError);
+    eCallbackReturn = rb_define_class_under(mTeek, "CallbackReturn", rb_eStandardError);
 
     /* Module function for list operations */
-    rb_define_module_function(mTclTkLib, "merge_tklist", lib_merge_tklist, -1);
+    rb_define_module_function(mTeek, "merge_tklist", lib_merge_tklist, -1);
 
     /* Global event loop functions - don't require an interpreter */
-    rb_define_module_function(mTclTkLib, "mainloop", lib_mainloop, -1);
-    rb_define_module_function(mTclTkLib, "do_one_event", lib_do_one_event, -1);
-    rb_define_module_function(mTclTkLib, "thread_timer_ms", lib_get_thread_timer_ms, 0);
-    rb_define_module_function(mTclTkLib, "thread_timer_ms=", lib_set_thread_timer_ms, 1);
+    rb_define_module_function(mTeek, "mainloop", lib_mainloop, -1);
+    rb_define_module_function(mTeek, "do_one_event", lib_do_one_event, -1);
+    rb_define_module_function(mTeek, "thread_timer_ms", lib_get_thread_timer_ms, 0);
+    rb_define_module_function(mTeek, "thread_timer_ms=", lib_set_thread_timer_ms, 1);
 
     /* Callback depth detection for unsafe operation warnings */
-    rb_define_module_function(mTclTkLib, "in_callback?", lib_in_callback_p, 0);
+    rb_define_module_function(mTeek, "in_callback?", lib_in_callback_p, 0);
 
     /* Version info - uses compile-time macros, no stubs needed */
-    rb_define_module_function(mTclTkLib, "get_version", lib_get_version, 0);
+    rb_define_module_function(mTeek, "get_version", lib_get_version, 0);
 
-    /* TclTkLib::RELEASE_TYPE module with constants */
+    /* Teek::RELEASE_TYPE module with constants */
     {
-        VALUE mReleaseType = rb_define_module_under(mTclTkLib, "RELEASE_TYPE");
+        VALUE mReleaseType = rb_define_module_under(mTeek, "RELEASE_TYPE");
         rb_define_const(mReleaseType, "ALPHA", INT2NUM(TCL_ALPHA_RELEASE));
         rb_define_const(mReleaseType, "BETA", INT2NUM(TCL_BETA_RELEASE));
         rb_define_const(mReleaseType, "FINAL", INT2NUM(TCL_FINAL_RELEASE));
     }
 
-    /* TclTkIp class (top-level for compatibility) */
-    cTclTkIp = rb_define_class("TclTkIp", rb_cObject);
-    rb_define_alloc_func(cTclTkIp, interp_alloc);
+    /* Teek::Interp class */
+    cInterp = rb_define_class_under(mTeek, "Interp", rb_cObject);
+    rb_define_alloc_func(cInterp, interp_alloc);
 
-    rb_define_method(cTclTkIp, "initialize", interp_initialize, -1);
-    rb_define_method(cTclTkIp, "tcl_eval", interp_tcl_eval, 1);
-    rb_define_method(cTclTkIp, "tcl_invoke", interp_tcl_invoke, -1);
-    rb_define_method(cTclTkIp, "tcl_get_var", interp_tcl_get_var, 1);
-    rb_define_method(cTclTkIp, "tcl_set_var", interp_tcl_set_var, 2);
-    rb_define_method(cTclTkIp, "do_one_event", interp_do_one_event, -1);
-    rb_define_method(cTclTkIp, "deleted?", interp_deleted_p, 0);
-    rb_define_method(cTclTkIp, "safe?", interp_safe_p, 0);
-    rb_define_method(cTclTkIp, "delete", interp_delete, 0);
-    rb_define_method(cTclTkIp, "tcl_version", interp_tcl_version, 0);
-    rb_define_method(cTclTkIp, "tk_version", interp_tk_version, 0);
-    rb_define_method(cTclTkIp, "mainloop", interp_mainloop, 0);
-    rb_define_method(cTclTkIp, "register_callback", interp_register_callback, 1);
-    rb_define_method(cTclTkIp, "unregister_callback", interp_unregister_callback, 1);
-    rb_define_method(cTclTkIp, "create_slave", interp_create_slave, -1);
-    rb_define_method(cTclTkIp, "thread_timer_ms", interp_get_thread_timer_ms, 0);
-    rb_define_method(cTclTkIp, "thread_timer_ms=", interp_set_thread_timer_ms, 1);
-    rb_define_method(cTclTkIp, "queue_for_main", interp_queue_for_main, 1);
-    rb_define_method(cTclTkIp, "on_main_thread?", interp_on_main_thread_p, 0);
-    rb_define_method(cTclTkIp, "create_console", interp_create_console, 0);
+    rb_define_method(cInterp, "initialize", interp_initialize, -1);
+    rb_define_method(cInterp, "tcl_eval", interp_tcl_eval, 1);
+    rb_define_method(cInterp, "tcl_invoke", interp_tcl_invoke, -1);
+    rb_define_method(cInterp, "tcl_get_var", interp_tcl_get_var, 1);
+    rb_define_method(cInterp, "tcl_set_var", interp_tcl_set_var, 2);
+    rb_define_method(cInterp, "do_one_event", interp_do_one_event, -1);
+    rb_define_method(cInterp, "deleted?", interp_deleted_p, 0);
+    rb_define_method(cInterp, "safe?", interp_safe_p, 0);
+    rb_define_method(cInterp, "delete", interp_delete, 0);
+    rb_define_method(cInterp, "tcl_version", interp_tcl_version, 0);
+    rb_define_method(cInterp, "tk_version", interp_tk_version, 0);
+    rb_define_method(cInterp, "mainloop", interp_mainloop, 0);
+    rb_define_method(cInterp, "register_callback", interp_register_callback, 1);
+    rb_define_method(cInterp, "unregister_callback", interp_unregister_callback, 1);
+    rb_define_method(cInterp, "create_slave", interp_create_slave, -1);
+    rb_define_method(cInterp, "thread_timer_ms", interp_get_thread_timer_ms, 0);
+    rb_define_method(cInterp, "thread_timer_ms=", interp_set_thread_timer_ms, 1);
+    rb_define_method(cInterp, "queue_for_main", interp_queue_for_main, 1);
+    rb_define_method(cInterp, "on_main_thread?", interp_on_main_thread_p, 0);
+    rb_define_method(cInterp, "create_console", interp_create_console, 0);
 
     /* Photo image functions (tkphoto.c) */
-    Init_tkphoto(cTclTkIp);
+    Init_tkphoto(cInterp);
 
     /* Font functions (tkfont.c) */
-    Init_tkfont(cTclTkIp);
+    Init_tkfont(cInterp);
 
     /* Utility functions (tkutil.c) */
-    Init_tkutil(cTclTkIp);
+    Init_tkutil(cInterp);
 
     /* Aliases for legacy API compatibility */
-    rb_define_alias(cTclTkIp, "_eval", "tcl_eval");
-    rb_define_alias(cTclTkIp, "_invoke", "tcl_invoke");
+    rb_define_alias(cInterp, "_eval", "tcl_eval");
+    rb_define_alias(cInterp, "_invoke", "tcl_invoke");
 
     /* Class methods for instance tracking */
-    rb_define_singleton_method(cTclTkIp, "instance_count", tcltkip_instance_count, 0);
-    rb_define_singleton_method(cTclTkIp, "instances", tcltkip_instances, 0);
+    rb_define_singleton_method(cInterp, "instance_count", tcltkip_instance_count, 0);
+    rb_define_singleton_method(cInterp, "instances", tcltkip_instances, 0);
 }

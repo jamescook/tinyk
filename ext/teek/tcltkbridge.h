@@ -31,12 +31,12 @@ extern const rb_data_type_t interp_type;
 struct tcltk_interp *get_interp(VALUE self);
 
 /* Photo image functions - defined in tkphoto.c */
-void Init_tkphoto(VALUE cTclTkIp);
+void Init_tkphoto(VALUE cInterp);
 
 /* Font functions - defined in tkfont.c */
-void Init_tkfont(VALUE cTclTkIp);
+void Init_tkfont(VALUE cInterp);
 
 /* Utility functions - defined in tkutil.c */
-void Init_tkutil(VALUE cTclTkIp);
+void Init_tkutil(VALUE cInterp);
 
 #endif /* TCLTKBRIDGE_H */

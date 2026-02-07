@@ -204,15 +204,15 @@ interp_measure_chars(int argc, VALUE *argv, VALUE self)
 }
 
 /* ---------------------------------------------------------
- * Init_tkfont - Register font methods on TclTkIp class
+ * Init_tkfont - Register font methods on Teek::Interp class
  *
  * Called from Init_tcltklib in tcltkbridge.c
  * --------------------------------------------------------- */
 
 void
-Init_tkfont(VALUE cTclTkIp)
+Init_tkfont(VALUE cInterp)
 {
-    rb_define_method(cTclTkIp, "text_width", interp_text_width, 2);
-    rb_define_method(cTclTkIp, "font_metrics", interp_font_metrics, 1);
-    rb_define_method(cTclTkIp, "measure_chars", interp_measure_chars, -1);
+    rb_define_method(cInterp, "text_width", interp_text_width, 2);
+    rb_define_method(cInterp, "font_metrics", interp_font_metrics, 1);
+    rb_define_method(cInterp, "measure_chars", interp_measure_chars, -1);
 }
