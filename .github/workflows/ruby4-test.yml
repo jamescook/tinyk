@@ -1,0 +1,40 @@
+name: Ruby 4.x Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      ruby_version:
+        description: 'Ruby version to test'
+        required: true
+        default: '4.0.1'
+        type: string
+
+jobs:
+  test-ruby4:
+    name: test (ruby ${{ github.event.inputs.ruby_version }}, tcl 9.0)
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      id: buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: Dockerfile.ci-test
+        build-args: |
+          RUBY_VERSION=${{ github.event.inputs.ruby_version }}
+          TCL_VERSION=9.0
+        builder: ${{ steps.buildx.outputs.name }}
+        load: true
+        tags: tinyk-ci-test-ruby4:latest
+
+    - name: Run tests
+      run: |
+        docker run --rm --init \
+          -e TCL_VERSION=9.0 \
+          -e TESTOPTS=-v \
+          tinyk-ci-test-ruby4:latest
