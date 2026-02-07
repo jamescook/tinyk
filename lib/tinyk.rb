@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'tcltklib'
+require_relative 'tinyk/ractor_support'
 
 module TinyK
   VERSION = "0.1.0"

@@ -1,4 +1,6 @@
+.beads/
 .DS_Store
+mise.toml
 /.bundle/
 /.yardoc
 /Gemfile.lock
