@@ -132,6 +132,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     xdotool \
+    iproute2 \
+    netcat-openbsd \
+    ffmpeg \
     bwidget \
     make \
     libyaml-0-2 \
@@ -185,9 +188,10 @@ COPY --from=builder /app/Gemfile /app/Gemfile
 COPY --from=builder /app/Gemfile.lock /app/Gemfile.lock
 COPY --from=builder /app/*.gemspec /app/
 
-# Copy tests directly from context (not cached with compilation)
-# This allows test changes without recompiling
+# Copy tests and samples directly from context (not cached with compilation)
+# This allows test/sample changes without recompiling
 COPY test/ test/
+COPY sample/ sample/
 
 # exec replaces bash so SIGINT (Ctrl+C) goes directly to rake
 CMD ["bash", "-c", "Xvfb :99 -screen 0 1024x768x24 & sleep 1 && exec env DISPLAY=:99 bundle exec rake test"]

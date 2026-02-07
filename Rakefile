@@ -236,7 +236,58 @@ namespace :docker do
     sh "docker image prune -f --filter label=#{DOCKER_LABEL}"
   end
 
-  Rake::Task['docker:test'].enhance do
-    Rake::Task['docker:prune'].invoke
+  Rake::Task['docker:test'].enhance { Rake::Task['docker:prune'].invoke }
+
+  # Scan sample files for # teek-record magic comment
+  # Format: # teek-record: title=My Demo, codec=vp9
+  def find_recordable_samples
+    Dir['sample/**/*.rb'].filter_map do |path|
+      first_lines = File.read(path, 500)
+      match = first_lines.match(/^#\s*teek-record(?::\s*(.+))?$/)
+      next unless match
+
+      options = {}
+      if match[1]
+        match[1].split(',').each do |pair|
+          key, value = pair.strip.split('=', 2)
+          options[key.strip] = value&.strip if key
+        end
+      end
+      options['sample'] = path
+      options
+    end
   end
+
+  desc "Record demos in Docker (TCL_VERSION=9.0|8.6, RUBY_VERSION=3.4|4.0|..., DEMO=sample/foo.rb)"
+  task record_demos: :build do
+    require 'fileutils'
+    FileUtils.mkdir_p('recordings')
+
+    demos = if ENV['DEMO']
+              find_recordable_samples.select { |d| d['sample'] == ENV['DEMO'] }
+            else
+              find_recordable_samples
+            end
+
+    if demos.empty?
+      puts "No recordable samples found. Add '# teek-record' comment to samples."
+      next
+    end
+
+    demos.each do |demo|
+      sample = demo['sample']
+      codec = ENV['CODEC'] || demo['codec'] || 'x264'
+      name = demo['name']
+
+      puts
+      puts "Recording #{sample} (#{codec})..."
+      env = "CODEC=#{codec}"
+      env += " NAME=#{name}" if name
+      sh "#{env} ./scripts/docker-record.sh #{sample}"
+    end
+
+    puts "Done! Recordings in: recordings/"
+  end
+
+  Rake::Task['docker:record_demos'].enhance { Rake::Task['docker:prune'].invoke }
 end

@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+# teek-record: title=Tk Goldberg (demonstration)
 #
 # Teek Goldberg demo
 #
@@ -383,6 +384,7 @@ class TkGoldberg_Demo
       if (n & 4).nonzero?          # End of puzzle flag
         set_mode(:MDONE)
         @active = []
+        TeekDemo.finish if defined?(TeekDemo) && TeekDemo.recording?
         return true
       end
     }
@@ -1771,5 +1773,32 @@ base = "#{top}.base"
 app.tcl_eval("frame #{base}")
 app.tcl_eval("pack #{base} -fill both -expand 1")
 
-TkGoldberg_Demo.new(app, base, top)
+demo = TkGoldberg_Demo.new(app, base, top)
+
+# Automated demo support (testing and recording)
+require_relative '../lib/teek/demo_support'
+TeekDemo.app = app
+
+if TeekDemo.recording?
+  app.tcl_eval("wm geometry #{top} +0+0")       # Position at top-left for capture
+  app.tcl_eval("#{top} configure -cursor none")  # Hide cursor for recording
+  TeekDemo.signal_recording_ready(window: top)
+  app.after(500) { demo.start }
+elsif TeekDemo.testing?
+  TeekDemo.after_idle {
+    # Open the settings drawer (click >> button)
+    app.tcl_eval("#{base}.btnf.show invoke")
+    app.update
+
+    # Drag the speed slider to max (index 1 = fastest)
+    app.tcl_eval("#{base}.ctrl.speedscale set 1")
+    app.update
+
+    # Click the Start button
+    app.tcl_eval("#{base}.ctrl.start invoke")
+
+    app.after(2000) { TeekDemo.finish }
+  }
+end
+
 app.mainloop
