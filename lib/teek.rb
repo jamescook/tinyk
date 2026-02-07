@@ -48,12 +48,34 @@ module Teek
     end
 
     def after(ms, &block)
-      id = nil
-      id = @interp.register_callback(proc { |*|
+      cb_id = nil
+      cb_id = @interp.register_callback(proc { |*|
         block.call
-        @interp.unregister_callback(id)
+        @interp.unregister_callback(cb_id)
       })
-      @interp.tcl_eval("after #{ms.to_i} {ruby_callback #{id}}")
+      after_id = @interp.tcl_eval("after #{ms.to_i} {ruby_callback #{cb_id}}")
+      after_id.instance_variable_set(:@cb_id, cb_id)
+      after_id
+    end
+
+    def after_idle(&block)
+      cb_id = nil
+      cb_id = @interp.register_callback(proc { |*|
+        block.call
+        @interp.unregister_callback(cb_id)
+      })
+      after_id = @interp.tcl_eval("after idle {ruby_callback #{cb_id}}")
+      after_id.instance_variable_set(:@cb_id, cb_id)
+      after_id
+    end
+
+    def after_cancel(after_id)
+      @interp.tcl_eval("after cancel #{after_id}")
+      if (cb_id = after_id.instance_variable_get(:@cb_id))
+        @interp.unregister_callback(cb_id)
+        after_id.instance_variable_set(:@cb_id, nil)
+      end
+      after_id
     end
 
     def command(cmd, *args, **kwargs)
