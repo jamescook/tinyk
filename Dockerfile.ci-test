@@ -1,0 +1,193 @@
+# syntax=docker/dockerfile:1
+# Test Dockerfile for Tcl/Tk on Ubuntu 25.04
+# Using 25.04 (plucky) instead of 24.04 LTS because it has:
+# - Tcl/Tk 9.0.1 packages
+# - BWidget 1.10.1 with Tcl 9 support
+# - libtk-img 2.0.1 with Tcl 9 support
+#
+# Usage:
+#   Tcl/Tk 9.0 (default):
+#     docker build -f Dockerfile.ci-test -t tinyk-ci-test-9 .
+#
+#   Tcl/Tk 8.6:
+#     docker build -f Dockerfile.ci-test --build-arg TCL_VERSION=8.6 -t tinyk-ci-test-8 .
+#
+#   Run tests:
+#     docker run --rm tinyk-ci-test-9
+#
+#   Or use rake tasks:
+#     rake docker:test                    # Test with Tcl 9.0
+#     TCL_VERSION=8.6 rake docker:test    # Test with Tcl 8.6
+#     rake docker:clean                   # Remove dangling images
+
+# Ruby source - just grab pre-built Ruby, no compilation needed
+ARG RUBY_VERSION=3.4
+FROM ruby:${RUBY_VERSION}-slim AS ruby-source
+
+#############################################
+# BUILDER STAGE - compile extension only
+#############################################
+FROM ubuntu:25.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Skip docs/man pages to speed up apt installs
+RUN echo 'path-exclude=/usr/share/doc/*' > /etc/dpkg/dpkg.cfg.d/excludes && \
+    echo 'path-exclude=/usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/excludes && \
+    echo 'path-exclude=/usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/excludes
+
+COPY --from=ruby-source /usr/local /usr/local
+ENV PATH="/usr/local/bin:${PATH}"
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libyaml-dev \
+    libffi-dev \
+    libreadline-dev \
+    zlib1g-dev \
+    libssl-dev \
+    libx11-dev \
+    libxcursor-dev
+
+# Tcl/Tk dev packages for compilation
+ARG TCL_VERSION=9.0
+ENV TCL_VERSION=${TCL_VERSION}
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    if [ "${TCL_VERSION}" = "8.6" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends tcl-dev tk-dev; \
+    else \
+        apt-get update && apt-get install -y --no-install-recommends tcl9.0-dev tk9.0-dev libtommath-dev; \
+    fi
+
+# Ubuntu 25.04 pkg-config bug: tk9.0.pc requires "tcl" but only tcl9.0.pc exists
+RUN if [ "${TCL_VERSION}" != "8.6" ]; then \
+        MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH) && \
+        ln -sf tcl9.0.pc /usr/lib/${MULTIARCH}/pkgconfig/tcl.pc && \
+        ln -sf tk9.0.pc /usr/lib/${MULTIARCH}/pkgconfig/tk.pc; \
+    fi
+
+WORKDIR /app
+
+# Copy only what's needed for bundle install first (for layer caching)
+# This way lib/ changes don't invalidate the bundle install cache
+# Note: Gemfile.lock is gitignored (gem convention), Docker generates its own
+COPY Gemfile *.gemspec ./
+
+ENV BUNDLE_PATH=/usr/local/bundle
+RUN --mount=type=cache,target=/bundle-cache \
+    if [ -d /bundle-cache/ruby ]; then \
+        echo "Restoring cached gems..." && \
+        mkdir -p $BUNDLE_PATH && \
+        cp -a /bundle-cache/* $BUNDLE_PATH/; \
+    fi && \
+    bundle install && \
+    cp -a $BUNDLE_PATH/* /bundle-cache/
+
+# Now copy source code (after bundle install so changes don't invalidate gem cache)
+COPY Rakefile ./
+COPY ext/ ext/
+COPY lib/ lib/
+
+# Compile the main extension
+RUN MAKEFLAGS="-j$(nproc)" MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH) && \
+    if [ "${TCL_VERSION}" = "8.6" ]; then \
+        bundle exec rake compile -- --with-tcltkversion=8.6 \
+            --with-tcl-lib=/usr/lib/${MULTIARCH} \
+            --with-tk-lib=/usr/lib/${MULTIARCH} \
+            --with-tcl-include=/usr/include/tcl8.6 \
+            --with-tk-include=/usr/include/tcl8.6; \
+    else \
+        bundle exec rake compile -- --with-tcltkversion=9.0 \
+            --with-tcl-lib=/usr/lib/${MULTIARCH} \
+            --with-tk-lib=/usr/lib/${MULTIARCH} \
+            --with-tcl-include=/usr/include/tcl9.0 \
+            --with-tk-include=/usr/include/tk9.0; \
+    fi
+
+#############################################
+# RUNTIME STAGE - slim image for running tests
+#############################################
+FROM ubuntu:25.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# UTF-8 locale for Ruby's default external encoding.
+# Without this, Encoding.default_external is US-ASCII and Ruby may fail
+# when reading files containing non-ASCII characters.
+ENV LANG=C.UTF-8
+
+# Skip docs/man pages
+RUN echo 'path-exclude=/usr/share/doc/*' > /etc/dpkg/dpkg.cfg.d/excludes && \
+    echo 'path-exclude=/usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/excludes && \
+    echo 'path-exclude=/usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/excludes
+
+# Runtime-only dependencies (no build-essential, no *-dev)
+ARG TCL_VERSION=9.0
+ENV TCL_VERSION=${TCL_VERSION}
+
+# Base runtime packages
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    xvfb \
+    xdotool \
+    bwidget \
+    make \
+    libyaml-0-2 \
+    libffi8 \
+    libreadline8 \
+    zlib1g \
+    libssl3t64 \
+    libxcursor1
+
+# Tcl/Tk version-specific packages
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    if [ "${TCL_VERSION}" = "8.6" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends tcl tk libtk-img; \
+    else \
+        apt-get update && apt-get install -y --no-install-recommends tcl9.0 tk9.0 && \
+        ln -sf /usr/bin/tclsh9.0 /usr/bin/tclsh; \
+    fi
+
+# libtk-img for Tcl 9 (not in Ubuntu 25.04, fetch from Debian)
+# Note: Package versions differ by arch (arm64 has +b1 rebuild suffix)
+RUN if [ "${TCL_VERSION}" != "8.6" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends wget && \
+        ARCH=$(dpkg --print-architecture) && \
+        DEBIAN_POOL="http://ftp.us.debian.org/debian/pool/main" && \
+        wget -O /tmp/libjpeg62-turbo.deb "${DEBIAN_POOL}/libj/libjpeg-turbo/libjpeg62-turbo_2.1.5-4_${ARCH}.deb" && \
+        TKIMG_PKG=$(wget -qO- "${DEBIAN_POOL}/libt/libtk-img/" | grep -o "libtk-img_2\.1[^\"]*_${ARCH}\.deb" | sort -V | tail -1) && \
+        wget -O /tmp/libtk-img.deb "${DEBIAN_POOL}/libt/libtk-img/${TKIMG_PKG}" && \
+        dpkg -i --force-depends /tmp/libjpeg62-turbo.deb /tmp/libtk-img.deb && \
+        apt-get install -f -y --no-install-recommends && \
+        rm /tmp/libjpeg62-turbo.deb /tmp/libtk-img.deb && \
+        apt-get purge -y wget && apt-get autoremove -y && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Copy Ruby and gems from builder
+COPY --from=builder /usr/local /usr/local
+ENV PATH="/usr/local/bin:${PATH}"
+ENV BUNDLE_PATH=/usr/local/bundle
+
+WORKDIR /app
+
+# Copy compiled extension and build state from builder
+# - lib/ contains the final .so files
+# - ext/ contains extconf.rb (needed by Rakefile)
+# - tmp/ contains rake-compiler build state (prevents recompilation)
+COPY --from=builder /app/lib /app/lib
+COPY --from=builder /app/ext /app/ext
+COPY --from=builder /app/tmp /app/tmp
+COPY --from=builder /app/Rakefile /app/Rakefile
+COPY --from=builder /app/Gemfile /app/Gemfile
+COPY --from=builder /app/Gemfile.lock /app/Gemfile.lock
+COPY --from=builder /app/*.gemspec /app/
+
+# Copy tests directly from context (not cached with compilation)
+# This allows test changes without recompiling
+COPY test/ test/
+
+# exec replaces bash so SIGINT (Ctrl+C) goes directly to rake
+CMD ["bash", "-c", "Xvfb :99 -screen 0 1024x768x24 & sleep 1 && exec env DISPLAY=:99 bundle exec rake test"]

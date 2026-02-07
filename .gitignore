@@ -1,0 +1,37 @@
+.DS_Store
+/.bundle/
+/.yardoc
+/Gemfile.lock
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+/lib/*.so
+/*.gem
+*.bundle
+*.dSYM/
+*.o
+ext/**/Makefile
+screenshots/unverified/
+screenshots/diffs/
+screenshots/logs
+
+# ext/trofs build artifacts
+ext/trofs/*.dylib
+ext/trofs/*.so
+ext/trofs/config.log
+ext/trofs/config.status
+ext/trofs/pkgIndex.tcl
+ext/trofs/library/trofs.tcl
+ext/trofs/tests/upstream/load.tcl
+ext/trofs/autom4te.cache/
+
+# Doc build artifacts
+docs_site/_api/
+docs_site/_site/
+docs_site/.jekyll-cache/
+docs_site/assets/js/search-data.json
+docs_site/_includes/nav.html
+docs_site/_includes/stats.html
