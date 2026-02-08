@@ -28,17 +28,13 @@ class TestCallbackControlFlow < Minitest::Test
     app.tcl_eval("pack .e")
 
     # Bind on the widget itself - fires first, throws break
-    cb1 = app.register_callback(proc { |*|
+    app.bind('.e', 'Key-a') {
       first_fired = true
       throw :teek_break
-    })
-    app.tcl_eval("bind .e <Key-a> {ruby_callback #{cb1}}")
+    }
 
     # Bind on the Entry class tag - should NOT fire due to break
-    cb2 = app.register_callback(proc { |*|
-      second_fired = true
-    })
-    app.tcl_eval("bind Entry <Key-a> {ruby_callback #{cb2}}")
+    app.bind('Entry', 'Key-a') { second_fired = true }
 
     # Generate the event
     app.tcl_eval("focus -force .e")
@@ -50,7 +46,7 @@ class TestCallbackControlFlow < Minitest::Test
     raise "second callback fired despite break" if second_fired
 
     # Clean up class binding so it doesn't leak to other tests
-    app.tcl_eval("bind Entry <Key-a> {}")
+    app.unbind('Entry', 'Key-a')
   end
 
   # throw :teek_return should not crash - returns TCL_RETURN to Tcl.

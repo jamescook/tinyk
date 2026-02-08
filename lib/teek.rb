@@ -143,6 +143,70 @@ module Teek
       @interp.tcl_eval('update idletasks')
     end
 
+    def show(window = '.')
+      @interp.tcl_eval("wm deiconify #{window}")
+    end
+
+    def hide(window = '.')
+      @interp.tcl_eval("wm withdraw #{window}")
+    end
+
+    # Bind a Tk event on a widget, with optional substitutions forwarded
+    # as block arguments. Substitutions can be symbols (mapped to Tk's %
+    # codes) or raw strings passed through as-is.
+    #
+    #   # Mouse click with window coordinates
+    #   app.bind('.c', 'Button-1', :x, :y) { |x, y| puts "#{x},#{y}" }
+    #
+    #   # Key press
+    #   app.bind('.', 'KeyPress', :keysym) { |k| puts k }
+    #
+    #   # No substitutions
+    #   app.bind('.btn', 'Enter') { highlight }
+    #
+    #   # Raw Tcl expression (for cases not covered by symbol map)
+    #   app.bind('.c', 'Button-1', '%T') { |type| ... }
+    #
+    # For canvas work, use command() to convert window coords to canvas
+    # coords inside the block:
+    #
+    #   app.bind(canvas, 'Button-1', :x, :y) do |x, y|
+    #     cx = app.command(canvas, :canvasx, x).to_f
+    #     cy = app.command(canvas, :canvasy, y).to_f
+    #   end
+    #
+    # Performance note: each substitution is passed from Tcl to Ruby as a
+    # callback argument (one crossing). Any command() calls inside the block
+    # are additional Tcl round-trips. This is negligible for click/key
+    # events but could matter in hot-path handlers like <Motion> that fire
+    # hundreds of times per second. For those, consider tcl_eval with
+    # inline Tcl expressions to do all work in a single evaluation.
+    #
+    BIND_SUBS = {
+      x: '%x', y: '%y',                   # window coordinates
+      root_x: '%X', root_y: '%Y',         # screen coordinates
+      widget: '%W',                        # widget path
+      keysym: '%K', keycode: '%k',         # key events
+      char: '%A',                          # character (key events)
+      width: '%w', height: '%h',           # Configure events
+      button: '%b',                        # mouse button number
+      mouse_wheel: '%D',                   # mousewheel delta
+      type: '%T',                          # event type
+    }.freeze
+
+    def bind(widget, event, *subs, &block)
+      event_str = event.start_with?('<') ? event : "<#{event}>"
+      cb = register_callback(proc { |*args| block.call(*args) })
+      tcl_subs = subs.map { |s| s.is_a?(Symbol) ? BIND_SUBS.fetch(s) : s.to_s }
+      sub_str = tcl_subs.empty? ? '' : ' ' + tcl_subs.join(' ')
+      @interp.tcl_eval("bind #{widget} #{event_str} {ruby_callback #{cb}#{sub_str}}")
+    end
+
+    def unbind(widget, event)
+      event_str = event.start_with?('<') ? event : "<#{event}>"
+      @interp.tcl_eval("bind #{widget} #{event_str} {}")
+    end
+
     # Toggle the macOS window appearance between light ("aqua") and dark
     # ("darkaqua") mode, or pass a specific value. No-op on non-macOS.
     #

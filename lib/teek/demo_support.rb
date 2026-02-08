@@ -52,7 +52,7 @@ module TeekDemo
       raise "TeekDemo.app not set" unless app
 
       @demo_started = false
-      cb_id = app.register_callback(proc { |*|
+      app.bind(window, 'Visibility') do
         next if @demo_started
         @demo_started = true
 
@@ -62,8 +62,7 @@ module TeekDemo
         app.after(timeout * 1000) { finish }
 
         app.after(50) { block.call }
-      })
-      app.tcl_eval("bind #{window} <Visibility> {ruby_callback #{cb_id}}")
+      end
     end
 
     # Run block once when event loop is idle.

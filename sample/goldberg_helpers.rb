@@ -127,12 +127,11 @@ module GoldbergHelpers
 
   # Bind an event on the canvas widget itself.
   def canvas_bind(event, &block)
-    id = @app.register_callback(proc { |*| block.call })
-    @app.tcl_eval("bind #{@canvas} <#{event}> {ruby_callback #{id}}")
+    @app.bind(@canvas, event, &block)
   end
 
   def canvas_bind_remove(event)
-    @app.tcl_eval("bind #{@canvas} <#{event}> {}")
+    @app.unbind(@canvas, event)
   end
 
   # -- Misc helpers --------------------------------------------------------

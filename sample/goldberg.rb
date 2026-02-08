@@ -232,8 +232,7 @@ class TkGoldberg_Demo
     @app.tcl_eval("grid #{@w_about} -in #{@ctrl} -row 100 -sticky ew")
 
     # Debug: right-click reset to enter debug mode
-    debug_cb = @app.register_callback(proc { |*| @mode = :MDEBUG })
-    @app.tcl_eval("bind #{@w_reset} <Button-3> {ruby_callback #{debug_cb}}")
+    @app.bind(@w_reset, 'Button-3') { @mode = :MDEBUG }
   end
 
   def do_detail_frame
