@@ -1,0 +1,59 @@
+name: Windows CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      ruby_version:
+        description: 'Ruby version to test'
+        required: true
+        default: '3.4'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-windows:
+    name: test (ruby ${{ github.event.inputs.ruby_version }}, Windows)
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ github.event.inputs.ruby_version }}
+        bundler-cache: true
+
+    - name: Install Tcl/Tk via MSYS2
+      shell: bash
+      run: |
+        MSYS2_ROOT=$(ruby -e "puts RbConfig::CONFIG['prefix']")/msys64
+        echo "MSYS2_ROOT=$MSYS2_ROOT"
+
+        $MSYS2_ROOT/usr/bin/pacman -S --needed --noconfirm \
+          mingw-w64-ucrt-x86_64-tcl \
+          mingw-w64-ucrt-x86_64-tk \
+          mingw-w64-ucrt-x86_64-tkimg
+
+    - name: Cache compiled extension
+      uses: actions/cache@v4
+      with:
+        path: lib/*.so
+        key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'Rakefile', 'Gemfile.lock') }}
+
+    - name: Compile native extension
+      run: bundle exec rake compile
+
+    - name: Run tests
+      run: bundle exec rake test TESTOPTS="-v"
+      continue-on-error: true
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-windows-ruby${{ github.event.inputs.ruby_version }}
+        path: coverage/
+        retention-days: 7
