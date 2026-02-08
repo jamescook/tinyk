@@ -454,10 +454,17 @@ has_children: true
     CGI.escapeHTML(str.to_s)
   end
 
+  # HTML-escape, then convert YARD +code+ markup to <code> tags.
+  def ht(str)
+    h(str).gsub(/\+([^+]+)\+/, '<code>\1</code>')
+  end
+
   def md(text, current_path: nil)
     return '' if text.nil? || text.to_s.strip.empty?
+    # Convert YARD +code+ to markdown `code` before Kramdown processing
+    converted = text.to_s.gsub(/\+([^+]+)\+/, '`\1`')
     # Convert YARD link syntax to markdown links before Kramdown processing
-    converted = convert_yard_links(text.to_s, current_path)
+    converted = convert_yard_links(converted, current_path)
     Kramdown::Document.new(converted).to_html
   end
 

@@ -3,14 +3,14 @@
 <h6 class="text-muted small">Parameters</h6>
 <ul class="mb-2">
 <% tags['params'].each do |param| %>
-<li><code><%= h param['name'] %></code><%= " <code>#{h param['types'].join(', ')}</code>" if param['types']&.any? %><%= " — #{h param['text']}" if param['text'] && !param['text'].empty? %></li>
+<li><code><%= h param['name'] %></code><%= " <code>#{h param['types'].join(', ')}</code>" if param['types']&.any? %><%= " — #{ht param['text']}" if param['text'] && !param['text'].empty? %></li>
 <% end %>
 </ul>
 <% end %>
 
 <% if tags['returns']&.any? %>
 <% tags['returns'].each do |ret| %>
-<p><strong>Returns</strong> <%= "<code>#{h ret['types'].join(', ')}</code>" if ret['types']&.any? %><%= " — #{h ret['text']}" if ret['text'] && !ret['text'].empty? %></p>
+<p><strong>Returns</strong> <%= "<code>#{h ret['types'].join(', ')}</code>" if ret['types']&.any? %><%= " — #{ht ret['text']}" if ret['text'] && !ret['text'].empty? %></p>
 <% end %>
 <% end %>
 
@@ -18,14 +18,14 @@
 <h6 class="text-muted small">Options</h6>
 <ul class="mb-2">
 <% tags['options'].each do |opt| %>
-<li><code><%= h opt['name'] %></code><%= " <code>#{h opt['types'].join(', ')}</code>" if opt['types']&.any? %><%= " — #{h opt['text']}" if opt['text'] && !opt['text'].empty? %></li>
+<li><code><%= h opt['name'] %></code><%= " <code>#{h opt['types'].join(', ')}</code>" if opt['types']&.any? %><%= " — #{ht opt['text']}" if opt['text'] && !opt['text'].empty? %></li>
 <% end %>
 </ul>
 <% end %>
 
 <% if tags['regular']&.any? %>
 <% tags['regular'].each do |tag| %>
-<p class="tag"><strong>@<%= h tag['tag'] %></strong> <%= "<code>#{h tag['name']}</code> " if tag['name'] %><%= "<code>#{h tag['types'].join(', ')}</code>" if tag['types']&.any? %> <%= h tag['text'] %></p>
+<p class="tag"><strong>@<%= h tag['tag'] %></strong> <%= "<code>#{h tag['name']}</code> " if tag['name'] %><%= "<code>#{h tag['types'].join(', ')}</code>" if tag['types']&.any? %> <%= ht tag['text'] %></p>
 <% end %>
 <% end %>
 
