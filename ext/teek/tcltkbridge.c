@@ -1539,9 +1539,7 @@ Init_tcltklib(void)
     rb_define_module_function(mTeek, "split_list", teek_split_list, 1);
     rb_define_module_function(mTeek, "tcl_to_bool", teek_tcl_to_bool, 1);
 
-    /* Global event loop functions - don't require an interpreter */
-    rb_define_module_function(mTeek, "mainloop", lib_mainloop, -1);
-    rb_define_module_function(mTeek, "do_one_event", lib_do_one_event, -1);
+    /* Global thread timer - doesn't require an interpreter */
     rb_define_module_function(mTeek, "thread_timer_ms", lib_get_thread_timer_ms, 0);
     rb_define_module_function(mTeek, "thread_timer_ms=", lib_set_thread_timer_ms, 1);
 
