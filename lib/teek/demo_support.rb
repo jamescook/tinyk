@@ -23,6 +23,7 @@
 #
 require 'socket'
 
+# @api private
 module TeekDemo
   class << self
     attr_accessor :app
