@@ -4,6 +4,27 @@ require 'tcltklib'
 require_relative 'teek/version'
 require_relative 'teek/ractor_support'
 
+# Ruby interface to Tcl/Tk. Provides a thin wrapper around a Tcl interpreter
+# with Ruby callbacks, event bindings, and background work support.
+#
+# The main entry point is {Teek::App}, which initializes Tcl/Tk and provides
+# methods for evaluating Tcl code, creating widgets, and running the event loop.
+#
+# @example Basic usage
+#   app = Teek::App.new
+#   app.command('ttk::button', '.btn', text: 'Click', command: proc { puts "hi" })
+#   app.command(:pack, '.btn')
+#   app.show
+#   app.mainloop
+#
+# @example Background work (keeps UI responsive)
+#   app.background_work(urls, mode: :thread) do |task, data|
+#     data.each { |url| task.yield(fetch(url)) }
+#   end.on_progress { |result| update_ui(result) }
+#      .on_done { puts "Finished" }
+#
+# @see Teek::App
+# @see Teek::BackgroundWork
 module Teek
 
   def self.bool_to_tcl(val)
