@@ -1193,6 +1193,34 @@ interp_set_thread_timer_ms(VALUE self, VALUE val)
 }
 
 /* ---------------------------------------------------------
+ * Teek.tcl_to_bool(str) - Convert Tcl boolean string to Ruby true/false
+ *
+ * Uses Tcl_GetBooleanFromObj which recognizes:
+ *   true/false, yes/no, on/off, 1/0 (case-insensitive)
+ *   and any numeric value (0 = false, non-zero = true)
+ * --------------------------------------------------------- */
+
+static VALUE
+teek_tcl_to_bool(VALUE self, VALUE str)
+{
+    Tcl_Obj *obj;
+    int bval;
+
+    StringValue(str);
+    obj = Tcl_NewStringObj(RSTRING_PTR(str), RSTRING_LEN(str));
+    Tcl_IncrRefCount(obj);
+
+    if (Tcl_GetBooleanFromObj(utility_interp, obj, &bval) != TCL_OK) {
+        const char *msg = Tcl_GetStringResult(utility_interp);
+        Tcl_DecrRefCount(obj);
+        rb_raise(eTclError, "%s", msg);
+    }
+
+    Tcl_DecrRefCount(obj);
+    return bval ? Qtrue : Qfalse;
+}
+
+/* ---------------------------------------------------------
  * Teek.make_list(*args) - Merge strings into Tcl list
  *
  * Uses Tcl's quoting rules for proper escaping.
@@ -1506,9 +1534,10 @@ Init_tcltklib(void)
     rb_define_const(mTeek, "CALLBACK_CONTINUE", ID2SYM(rb_intern("teek_continue")));
     rb_define_const(mTeek, "CALLBACK_RETURN", ID2SYM(rb_intern("teek_return")));
 
-    /* Module functions for list operations (no interpreter needed) */
+    /* Module functions for Tcl value conversion (no interpreter needed) */
     rb_define_module_function(mTeek, "make_list", teek_make_list, -1);
     rb_define_module_function(mTeek, "split_list", teek_split_list, 1);
+    rb_define_module_function(mTeek, "tcl_to_bool", teek_tcl_to_bool, 1);
 
     /* Global event loop functions - don't require an interpreter */
     rb_define_module_function(mTeek, "mainloop", lib_mainloop, -1);

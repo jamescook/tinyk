@@ -6,6 +6,10 @@ require_relative 'teek/ractor_support'
 module Teek
   VERSION = "0.1.0"
 
+  def self.bool_to_tcl(val)
+    val ? "1" : "0"
+  end
+
   WIDGET_COMMANDS = %w[
     button label frame entry text canvas listbox
     scrollbar scale spinbox menu menubutton message
@@ -20,14 +24,20 @@ module Teek
   ].freeze
 
   class App
-    attr_reader :interp, :widgets
+    attr_reader :interp, :widgets, :debugger
 
-    def initialize(track_widgets: true, &block)
+    def initialize(track_widgets: true, debug: false, &block)
       @interp = Teek::Interp.new
       @interp.tcl_eval('package require Tk')
       @interp.tcl_eval('wm withdraw .')
       @widgets = {}
+      debug ||= !!ENV['TEEK_DEBUG']
+      track_widgets = true if debug
       setup_widget_tracking if track_widgets
+      if debug
+        require_relative 'teek/debugger'
+        @debugger = Teek::Debugger.new(self)
+      end
       instance_eval(&block) if block
     end
 
@@ -101,6 +111,14 @@ module Teek
       Teek.make_list(*args)
     end
 
+    def tcl_to_bool(str)
+      Teek.tcl_to_bool(str)
+    end
+
+    def bool_to_tcl(val)
+      Teek.bool_to_tcl(val)
+    end
+
     def command(cmd, *args, **kwargs)
       parts = [cmd.to_s]
       args.each do |arg|
@@ -129,10 +147,14 @@ module Teek
 
     def setup_widget_tracking
       @create_cb_id = @interp.register_callback(proc { |path, cls|
+        next if path.start_with?('.teek_debug')
         @widgets[path] = { class: cls, parent: File.dirname(path).gsub(/\A$/, '.') }
+        @debugger&.on_widget_created(path, cls)
       })
       @destroy_cb_id = @interp.register_callback(proc { |path|
+        next if path.start_with?('.teek_debug')
         @widgets.delete(path)
+        @debugger&.on_widget_destroyed(path)
       })
 
       # Tcl proc called on widget creation (trace leave)
