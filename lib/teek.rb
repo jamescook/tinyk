@@ -41,14 +41,32 @@ module Teek
       instance_eval(&block) if block
     end
 
+    # Evaluate a raw Tcl script string and return the result.
+    # Prefer {#command} for building commands from Ruby values; use this
+    # when you need Tcl-level features like variable substitution or
+    # inline expressions that {#command} can't express.
+    # @param script [String] Tcl code to evaluate
+    # @return [String] the Tcl result
     def tcl_eval(script)
       @interp.tcl_eval(script)
     end
 
+    # Invoke a Tcl command with pre-split arguments (no Tcl parsing).
+    # Safer than {#tcl_eval} when arguments may contain special characters.
+    # @param args [Array<String>] command name followed by arguments
+    # @return [String] the Tcl result
     def tcl_invoke(*args)
       @interp.tcl_invoke(*args)
     end
 
+    # Register a Ruby callable as a Tcl callback.
+    # The callable can use +throw+ for Tcl control flow:
+    #   throw :teek_break    - stop event propagation (like Tcl "break")
+    #   throw :teek_continue - Tcl TCL_CONTINUE
+    #   throw :teek_return   - Tcl TCL_RETURN
+    # @param callable [#call] a Proc or lambda to invoke from Tcl
+    # @return [Integer] callback ID, usable as +ruby_callback <id>+ in Tcl
+    # @see #unregister_callback
     def register_callback(callable)
       wrapped = proc { |*args|
         caught = nil
@@ -68,10 +86,17 @@ module Teek
       @interp.register_callback(wrapped)
     end
 
+    # Remove a previously registered callback by its ID.
+    # @param id [Integer] callback ID returned by {#register_callback}
+    # @return [void]
     def unregister_callback(id)
       @interp.unregister_callback(id)
     end
 
+    # Schedule a one-shot timer. Calls the block after +ms+ milliseconds.
+    # @param ms [Integer] delay in milliseconds
+    # @yield block to call when the timer fires
+    # @return [String] timer ID, pass to {#after_cancel} to cancel
     def after(ms, &block)
       cb_id = nil
       cb_id = @interp.register_callback(proc { |*|
@@ -83,6 +108,9 @@ module Teek
       after_id
     end
 
+    # Schedule a block to run once when the event loop is idle.
+    # @yield block to call when the event loop is idle
+    # @return [String] timer ID, pass to {#after_cancel} to cancel
     def after_idle(&block)
       cb_id = nil
       cb_id = @interp.register_callback(proc { |*|
@@ -94,6 +122,9 @@ module Teek
       after_id
     end
 
+    # Cancel a pending {#after} or {#after_idle} timer.
+    # @param after_id [String] timer ID returned by {#after} or {#after_idle}
+    # @return [void]
     def after_cancel(after_id)
       @interp.tcl_eval("after cancel #{after_id}")
       if (cb_id = after_id.instance_variable_get(:@cb_id))
@@ -103,22 +134,45 @@ module Teek
       after_id
     end
 
+    # Split a Tcl list string into a Ruby array of strings.
+    # @param str [String] a Tcl-formatted list
+    # @return [Array<String>]
     def split_list(str)
       Teek.split_list(str)
     end
 
+    # Build a properly-escaped Tcl list from Ruby strings.
+    # @param args [Array<String>] elements to join
+    # @return [String] a Tcl-formatted list
     def make_list(*args)
       Teek.make_list(*args)
     end
 
+    # Convert a Tcl boolean string ("0", "1", "yes", "no", etc.) to Ruby boolean.
+    # @param str [String] a Tcl boolean value
+    # @return [Boolean]
     def tcl_to_bool(str)
       Teek.tcl_to_bool(str)
     end
 
+    # Convert a Ruby boolean to a Tcl boolean string ("1" or "0").
+    # @param val [Boolean]
+    # @return [String] "1" or "0"
     def bool_to_tcl(val)
       Teek.bool_to_tcl(val)
     end
 
+    # Build and evaluate a Tcl command from Ruby values.
+    # Positional args are converted: Symbols pass bare, Procs become
+    # callbacks, everything else is brace-quoted. Keyword args become
+    # +-key value+ option pairs.
+    # @example
+    #   app.command(:pack, '.btn', side: :left, padx: 10)
+    #   # evaluates: pack .btn -side left -padx {10}
+    # @param cmd [Symbol, String] the Tcl command name
+    # @param args positional arguments
+    # @param kwargs keyword arguments mapped to +-key value+ pairs
+    # @return [String] the Tcl result
     def command(cmd, *args, **kwargs)
       parts = [cmd.to_s]
       args.each do |arg|
@@ -131,56 +185,68 @@ module Teek
       @interp.tcl_eval(parts.join(' '))
     end
 
+    # Enter the Tk event loop. Blocks until the application exits.
+    # @return [void]
     def mainloop
       @interp.mainloop
     end
 
+    # Process all pending events and idle callbacks, then return.
+    # @return [void]
     def update
       @interp.tcl_eval('update')
     end
 
+    # Process only pending idle callbacks (e.g. geometry redraws), then return.
+    # @return [void]
     def update_idletasks
       @interp.tcl_eval('update idletasks')
     end
 
+    # Show a window. Defaults to the root window (".").
+    # @param window [String] Tk window path
+    # @return [void]
     def show(window = '.')
       @interp.tcl_eval("wm deiconify #{window}")
     end
 
+    # Hide a window without destroying it. Defaults to the root window (".").
+    # @param window [String] Tk window path
+    # @return [void]
     def hide(window = '.')
       @interp.tcl_eval("wm withdraw #{window}")
     end
 
     # Bind a Tk event on a widget, with optional substitutions forwarded
-    # as block arguments. Substitutions can be symbols (mapped to Tk's %
-    # codes) or raw strings passed through as-is.
+    # as block arguments. Substitutions can be symbols (mapped via
+    # {BIND_SUBS}) or raw Tcl +%+ codes passed through as-is.
     #
-    #   # Mouse click with window coordinates
+    # @example Mouse click with window coordinates
     #   app.bind('.c', 'Button-1', :x, :y) { |x, y| puts "#{x},#{y}" }
-    #
-    #   # Key press
+    # @example Key press
     #   app.bind('.', 'KeyPress', :keysym) { |k| puts k }
-    #
-    #   # No substitutions
+    # @example No substitutions
     #   app.bind('.btn', 'Enter') { highlight }
-    #
-    #   # Raw Tcl expression (for cases not covered by symbol map)
+    # @example Raw Tcl expression (for codes not in BIND_SUBS)
     #   app.bind('.c', 'Button-1', '%T') { |type| ... }
-    #
-    # For canvas work, use command() to convert window coords to canvas
-    # coords inside the block:
-    #
+    # @example Canvas coordinate conversion
     #   app.bind(canvas, 'Button-1', :x, :y) do |x, y|
     #     cx = app.command(canvas, :canvasx, x).to_f
     #     cy = app.command(canvas, :canvasy, y).to_f
     #   end
     #
-    # Performance note: each substitution is passed from Tcl to Ruby as a
-    # callback argument (one crossing). Any command() calls inside the block
-    # are additional Tcl round-trips. This is negligible for click/key
-    # events but could matter in hot-path handlers like <Motion> that fire
-    # hundreds of times per second. For those, consider tcl_eval with
-    # inline Tcl expressions to do all work in a single evaluation.
+    # @note Each substitution crosses from Tcl to Ruby once. Any {#command}
+    #   calls inside the block are additional round-trips. This is negligible
+    #   for click/key events but could matter for hot-path handlers like
+    #   +<Motion>+ that fire hundreds of times per second. For those, consider
+    #   {#tcl_eval} with inline Tcl expressions to do all work in one evaluation.
+    #
+    # @param widget [String] Tk widget path or class tag (e.g. ".btn", "Entry")
+    # @param event [String] Tk event name, with or without angle brackets
+    # @param subs [Array<Symbol, String>] substitution codes (see {BIND_SUBS})
+    # @yield [*values] called when the event fires, with substitution values
+    # @return [void]
+    # @see #unbind
     #
     BIND_SUBS = {
       x: '%x', y: '%y',                   # window coordinates
@@ -202,19 +268,24 @@ module Teek
       @interp.tcl_eval("bind #{widget} #{event_str} {ruby_callback #{cb}#{sub_str}}")
     end
 
+    # Remove an event binding previously set with {#bind}.
+    # @param widget [String] Tk widget path or class tag
+    # @param event [String] Tk event name, with or without angle brackets
+    # @return [void]
+    # @see #bind
     def unbind(widget, event)
       event_str = event.start_with?('<') ? event : "<#{event}>"
       @interp.tcl_eval("bind #{widget} #{event_str} {}")
     end
 
-    # Toggle the macOS window appearance between light ("aqua") and dark
-    # ("darkaqua") mode, or pass a specific value. No-op on non-macOS.
-    #
+    # Get the macOS window appearance. No-op (returns +nil+) on non-macOS.
+    # @example
     #   app.appearance          # => "aqua", "darkaqua", or "auto"
     #   app.appearance = :light # force light mode
     #   app.appearance = :dark  # force dark mode
     #   app.appearance = :auto  # follow system setting
-    #
+    # @return [String, nil] "aqua", "darkaqua", "auto", or nil on non-macOS
+    # @see #dark?
     def appearance
       return nil unless aqua?
       if tk_major >= 9
@@ -224,6 +295,9 @@ module Teek
       end
     end
 
+    # Set the macOS window appearance. No-op on non-macOS.
+    # @param mode [Symbol, String] +:light+, +:dark+, +:auto+, or a raw Tk value
+    # @return [void]
     def appearance=(mode)
       return unless aqua?
       value = case mode.to_sym
@@ -241,6 +315,7 @@ module Teek
 
     # Returns true if the window is currently displayed in dark mode.
     # Always returns false on non-macOS.
+    # @return [Boolean]
     def dark?
       return false unless aqua?
       @interp.tcl_eval('tk::unsupported::MacWindowStyle isdark .').delete('"') == '1'
