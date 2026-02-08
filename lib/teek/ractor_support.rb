@@ -20,8 +20,10 @@ module Teek
   # Unified background work API.
   #
   # Creates background work with the specified mode.
-  # Mode :ractor uses true parallel execution (Ruby 4.x+ only).
-  # Mode :thread uses traditional threading (GVL limited but always works).
+  # Mode :ractor uses true parallel execution (Ruby 4.x+ only). Best for CPU-bound work.
+  # Mode :thread uses traditional threading. Best for I/O-bound work (GVL released
+  #   during blocking I/O). For CPU-bound work, the GVL prevents parallelism and
+  #   thread overhead makes this slower than synchronous execution.
   #
   # Configuration (module-level):
   #   Teek::BackgroundWork.poll_ms = 16          # UI poll interval (default 16ms)

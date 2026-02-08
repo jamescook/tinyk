@@ -2,7 +2,12 @@
 
 # Thread-based background work for Teek applications.
 # Always available, works on all Ruby versions.
-# Uses GVL so not true parallelism, but keeps UI responsive.
+#
+# Best for I/O-bound work (network, file downloads, database queries) where the
+# worker releases the GVL during blocking calls, allowing real concurrency with
+# the UI thread. For CPU-bound work, the GVL serializes execution and thread
+# overhead makes this slower than synchronous mode. Use :ractor for CPU-bound
+# parallelism (Ruby 4.x+).
 
 module Teek
   module BackgroundThread
