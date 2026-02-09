@@ -230,7 +230,7 @@ namespace :docker do
     cmd += " -v #{Dir.pwd}/coverage:/app/coverage"
     cmd += " -e TCL_VERSION=#{tcl_version}"
     cmd += " -e TEST='#{ENV['TEST']}'" if ENV['TEST']
-    cmd += " -e TESTOPTS=#{ENV['TESTOPTS']}" if ENV['TESTOPTS']
+    cmd += " -e TESTOPTS='#{ENV['TESTOPTS']}'" if ENV['TESTOPTS']
     if ENV['COVERAGE'] == '1'
       cmd += " -e COVERAGE=1"
       cmd += " -e COVERAGE_NAME=#{ENV['COVERAGE_NAME'] || 'main'}"

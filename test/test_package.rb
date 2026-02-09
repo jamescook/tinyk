@@ -70,9 +70,12 @@ class TestPackage < Minitest::Test
   end
 
   def app_package_versions
-    versions = app.package_versions('Tk')
+    fixtures = File.join(Dir.pwd, 'test', 'fixtures')
+    app.add_package_path(fixtures)
+
+    versions = app.package_versions('teektest')
     raise "expected Array, got #{versions.class}" unless versions.is_a?(Array)
-    raise "expected at least one Tk version" if versions.empty?
+    raise "expected ['1.0'], got #{versions.inspect}" unless versions == ['1.0']
   end
 
   def test_add_package_path_and_require
