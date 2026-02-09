@@ -130,9 +130,6 @@ static void interp_deleted_callback(ClientData, Tcl_Interp *);
 /* 16ms ≈ 60fps - balances UI responsiveness with scheduler contention */
 #define DEFAULT_TIMER_INTERVAL_MS 16
 
-/* Global timer interval for TclTkLib.mainloop (mutable) */
-static int g_thread_timer_ms = DEFAULT_TIMER_INTERVAL_MS;
-
 /* struct tcltk_interp is defined in tcltkbridge.h */
 
 /* ---------------------------------------------------------
@@ -1066,109 +1063,6 @@ interp_mainloop(VALUE self)
  * yields between events).
  * --------------------------------------------------------- */
 
-/* Global timer handler - re-registers itself using global interval */
-static void
-global_keepalive_timer_proc(ClientData clientData)
-{
-    if (g_thread_timer_ms > 0) {
-        Tcl_CreateTimerHandler(g_thread_timer_ms, global_keepalive_timer_proc, NULL);
-    }
-}
-
-static VALUE
-lib_mainloop(int argc, VALUE *argv, VALUE self)
-{
-    int check_root = 1;  /* default: exit when no windows remain */
-    int event_flags = TCL_ALL_EVENTS;
-
-    /* Optional check_root argument:
-     *   true (default): exit when Tk_GetNumMainWindows() == 0
-     *   false: keep running even with no windows (for timers, traces, etc.)
-     */
-    if (argc > 0 && argv[0] != Qnil) {
-        check_root = RTEST(argv[0]);
-    }
-
-    for (;;) {
-        /* Exit if check_root enabled and no windows remain */
-        if (check_root && Tk_GetNumMainWindows() <= 0) {
-            break;
-        }
-
-        if (rb_thread_alone()) {
-            /* No other threads - simple blocking wait */
-            Tcl_DoOneEvent(event_flags);
-        } else {
-            /* Other threads exist - use polling with brief sleep.
-             *
-             * We tried rb_thread_call_without_gvl() with Tcl_ThreadAlert to
-             * efficiently release GVL during blocking waits, but it proved
-             * unstable - crashes in Digest and other C extensions, UI freezes,
-             * and unreliable notifier wakeup across platforms.
-             *
-             * This polling approach is simple and stable:
-             * - Process any pending events without blocking
-             * - If no events, brief sleep to avoid spinning (uses ~1-3% CPU idle)
-             * - rb_thread_schedule() lets background threads run during sleep
-             */
-            int had_event = Tcl_DoOneEvent(event_flags | TCL_DONT_WAIT);
-            if (!had_event) {
-                rb_thread_schedule();
-#ifdef _WIN32
-                Sleep(5);  /* 5ms */
-#else
-                struct timespec ts = {0, 5000000};  /* 5ms */
-                nanosleep(&ts, NULL);
-#endif
-            }
-        }
-
-        /* Check for Ruby interrupts (Ctrl-C, etc) */
-        rb_thread_check_ints();
-    }
-
-    return Qnil;
-}
-
-static VALUE
-lib_get_thread_timer_ms(VALUE self)
-{
-    return INT2NUM(g_thread_timer_ms);
-}
-
-static VALUE
-lib_set_thread_timer_ms(VALUE self, VALUE val)
-{
-    int ms = NUM2INT(val);
-    if (ms < 0) {
-        rb_raise(rb_eArgError, "thread_timer_ms must be >= 0 (got %d)", ms);
-    }
-    g_thread_timer_ms = ms;
-    return val;
-}
-
-/* ---------------------------------------------------------
- * TclTkLib.do_one_event(flags = ALL_EVENTS) - Process single event
- *
- * Global function - Tcl_DoOneEvent doesn't require an interpreter.
- * Returns true if event was processed, false if nothing to do.
- * --------------------------------------------------------- */
-
-static VALUE
-lib_do_one_event(int argc, VALUE *argv, VALUE self)
-{
-    int flags = TCL_ALL_EVENTS;
-    int result;
-
-    if (argc > 0) {
-        flags = NUM2INT(argv[0]);
-    }
-
-    result = Tcl_DoOneEvent(flags);
-
-    return result ? Qtrue : Qfalse;
-}
-
 /* ---------------------------------------------------------
  * Interp#thread_timer_ms / #thread_timer_ms= - Get/set timer interval
  * --------------------------------------------------------- */
@@ -1538,10 +1432,6 @@ Init_tcltklib(void)
     rb_define_module_function(mTeek, "make_list", teek_make_list, -1);
     rb_define_module_function(mTeek, "split_list", teek_split_list, 1);
     rb_define_module_function(mTeek, "tcl_to_bool", teek_tcl_to_bool, 1);
-
-    /* Global thread timer - doesn't require an interpreter */
-    rb_define_module_function(mTeek, "thread_timer_ms", lib_get_thread_timer_ms, 0);
-    rb_define_module_function(mTeek, "thread_timer_ms=", lib_set_thread_timer_ms, 1);
 
     /* Callback depth detection for unsafe operation warnings */
     rb_define_module_function(mTeek, "in_callback?", lib_in_callback_p, 0);
