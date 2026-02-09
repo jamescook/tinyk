@@ -44,35 +44,34 @@ class ThreadingDemo
     @app.update
     w = @app.command(:winfo, 'width', '.')
     h = @app.command(:winfo, 'height', '.')
-    @app.command(:wm, 'geometry', '.', "#{w}x#{h}+0+0")
-    @app.command(:wm, 'resizable', '.', 1, 1)
+    @app.set_window_geometry("#{w}x#{h}+0+0")
+    @app.set_window_resizable(true, true)
 
     close_proc = proc { |*|
       @background_task&.close
-      @app.command(:destroy, '.')
+      @app.destroy('.')
     }
     @app.command(:wm, 'protocol', '.', 'WM_DELETE_WINDOW', close_proc)
   end
 
   def build_ui
     @app.show
-    @app.command(:wm, 'title', '.', 'Concurrency Demo - File Hasher')
+    @app.set_window_title('Concurrency Demo - File Hasher')
     @app.command(:wm, 'minsize', '.', 600, 400)
 
     # Tcl variables for widget bindings
-    @app.command(:set, '::chunk_size', 3)
-    @app.command(:set, '::algorithm', 'SHA256')
-    @app.command(:set, '::mode', 'Thread')
-    @app.command(:set, '::allow_pause', 0)
-    @app.command(:set, '::progress', 0)
+    @app.set_variable('::chunk_size', 3)
+    @app.set_variable('::algorithm', 'SHA256')
+    @app.set_variable('::mode', 'Thread')
+    @app.set_variable('::allow_pause', 0)
+    @app.set_variable('::progress', 0)
 
     ractor_note = RACTOR_AVAILABLE ? "Ractor: true parallel." : "(Ractor available on Ruby 4.x+)"
-    @app.command('ttk::label', '.desc',
+    @app.create_widget('ttk::label',
       text: "File hasher demo - compares concurrency modes.\n" \
             "None: UI frozen. None+update: progress visible, pause works. " \
             "Thread: responsive, GVL shared. #{ractor_note}",
-      justify: :left)
-    @app.command(:pack, '.desc', fill: :x, padx: 10, pady: 10)
+      justify: :left).pack(fill: :x, padx: 10, pady: 10)
 
     build_controls
     build_statusbar
@@ -80,112 +79,116 @@ class ThreadingDemo
   end
 
   def build_controls
-    @app.command('ttk::frame', '.ctrl')
-    @app.command(:pack, '.ctrl', fill: :x, padx: 10, pady: 5)
+    ctrl = @app.create_widget('ttk::frame')
+    ctrl.pack(fill: :x, padx: 10, pady: 5)
 
-    @app.command('ttk::button', '.ctrl.start',
+    @start_btn = @app.create_widget('ttk::button', parent: ctrl,
       text: 'Start', command: proc { |*| start_hashing })
-    @app.command(:pack, '.ctrl.start', side: :left)
+    @start_btn.pack(side: :left)
 
-    @app.command('ttk::button', '.ctrl.pause',
+    @pause_btn = @app.create_widget('ttk::button', parent: ctrl,
       text: 'Pause', state: :disabled, command: proc { |*| toggle_pause })
-    @app.command(:pack, '.ctrl.pause', side: :left, padx: 5)
+    @pause_btn.pack(side: :left, padx: 5)
 
-    @app.command('ttk::button', '.ctrl.reset',
-      text: 'Reset', command: proc { |*| reset })
-    @app.command(:pack, '.ctrl.reset', side: :left)
+    @app.create_widget('ttk::button', parent: ctrl,
+      text: 'Reset', command: proc { |*| reset }).pack(side: :left)
 
-    @app.command('ttk::label', '.ctrl.algo_lbl', text: 'Algorithm:')
-    @app.command(:pack, '.ctrl.algo_lbl', side: :left, padx: 10)
+    @app.create_widget('ttk::label', parent: ctrl,
+      text: 'Algorithm:').pack(side: :left, padx: 10)
 
-    @app.command('ttk::combobox', '.ctrl.algo',
+    @algo_combo = @app.create_widget('ttk::combobox', parent: ctrl,
       textvariable: '::algorithm',
       values: Teek.make_list(*ALGORITHMS),
       width: 8,
       state: :readonly)
-    @app.command(:pack, '.ctrl.algo', side: :left)
+    @algo_combo.pack(side: :left)
 
-    @app.command('ttk::label', '.ctrl.batch_lbl', text: 'Batch:')
-    @app.command(:pack, '.ctrl.batch_lbl', side: :left, padx: 10)
+    @app.create_widget('ttk::label', parent: ctrl,
+      text: 'Batch:').pack(side: :left, padx: 10)
 
-    @app.command('ttk::label', '.ctrl.batch_val', text: '3', width: 3)
-    @app.command(:pack, '.ctrl.batch_val', side: :left)
+    @batch_val = @app.create_widget('ttk::label', parent: ctrl, text: '3', width: 3)
+    @batch_val.pack(side: :left)
 
-    @app.command('ttk::scale', '.ctrl.scale',
+    @app.create_widget('ttk::scale', parent: ctrl,
       orient: :horizontal,
       from: 1,
       to: 100,
       length: 100,
       variable: '::chunk_size',
-      command: proc { |v, *| @app.command('.ctrl.batch_val', 'configure', text: v.to_f.round.to_s) })
-    @app.command(:pack, '.ctrl.scale', side: :left, padx: 5)
+      command: proc { |v, *| @batch_val.command(:configure, text: v.to_f.round.to_s) })
+      .pack(side: :left, padx: 5)
 
-    @app.command('ttk::label', '.ctrl.mode_lbl', text: 'Mode:')
-    @app.command(:pack, '.ctrl.mode_lbl', side: :left, padx: 10)
+    @app.create_widget('ttk::label', parent: ctrl,
+      text: 'Mode:').pack(side: :left, padx: 10)
 
-    @app.command('ttk::combobox', '.ctrl.mode',
+    @mode_combo = @app.create_widget('ttk::combobox', parent: ctrl,
       textvariable: '::mode',
       values: Teek.make_list(*MODES),
       width: 10,
       state: :readonly)
-    @app.command(:pack, '.ctrl.mode', side: :left)
+    @mode_combo.pack(side: :left)
 
-    @app.command('ttk::checkbutton', '.ctrl.pause_chk',
+    @app.create_widget('ttk::checkbutton', parent: ctrl,
       text: 'Allow Pause',
-      variable: '::allow_pause')
-    @app.command(:pack, '.ctrl.pause_chk', side: :left, padx: 10)
+      variable: '::allow_pause').pack(side: :left, padx: 10)
   end
 
   def build_statusbar
-    @app.command('ttk::frame', '.status')
-    @app.command(:pack, '.status', side: :bottom, fill: :x, padx: 5, pady: 5)
+    status = @app.create_widget('ttk::frame')
+    status.pack(side: :bottom, fill: :x, padx: 5, pady: 5)
 
     # Progress section (left)
-    @app.command('ttk::frame', '.status.progress', relief: :sunken, borderwidth: 2)
-    @app.command(:pack, '.status.progress', side: :left, fill: :x, expand: 1, padx: 2)
+    progress_frame = @app.create_widget('ttk::frame', parent: status,
+      relief: :sunken, borderwidth: 2)
+    progress_frame.pack(side: :left, fill: :x, expand: 1, padx: 2)
 
-    @app.command('ttk::progressbar', '.status.progress.bar',
+    @app.create_widget('ttk::progressbar', parent: progress_frame,
       orient: :horizontal,
       length: 200,
       mode: :determinate,
       variable: '::progress',
-      maximum: 100)
-    @app.command(:pack, '.status.progress.bar', side: :left, padx: 5, pady: 4)
+      maximum: 100).pack(side: :left, padx: 5, pady: 4)
 
-    @app.command('ttk::label', '.status.progress.status', text: 'Ready', width: 20, anchor: :w)
-    @app.command(:pack, '.status.progress.status', side: :left, padx: 10)
+    @status_label = @app.create_widget('ttk::label', parent: progress_frame,
+      text: 'Ready', width: 20, anchor: :w)
+    @status_label.pack(side: :left, padx: 10)
 
-    @app.command('ttk::label', '.status.progress.file', text: '', width: 28, anchor: :w)
-    @app.command(:pack, '.status.progress.file', side: :left, padx: 5)
+    @file_label = @app.create_widget('ttk::label', parent: progress_frame,
+      text: '', width: 28, anchor: :w)
+    @file_label.pack(side: :left, padx: 5)
 
     # Info section (right)
-    @app.command('ttk::frame', '.status.info', relief: :sunken, borderwidth: 2)
-    @app.command(:pack, '.status.info', side: :right, padx: 2)
+    info_frame = @app.create_widget('ttk::frame', parent: status,
+      relief: :sunken, borderwidth: 2)
+    info_frame.pack(side: :right, padx: 2)
 
-    @app.command('ttk::label', '.status.info.files', text: '', width: 12, anchor: :e)
-    @app.command(:pack, '.status.info.files', side: :left, padx: 8, pady: 4)
+    @files_label = @app.create_widget('ttk::label', parent: info_frame,
+      text: '', width: 12, anchor: :e)
+    @files_label.pack(side: :left, padx: 8, pady: 4)
 
-    @app.command('ttk::separator', '.status.info.sep', orient: :vertical)
-    @app.command(:pack, '.status.info.sep', side: :left, fill: :y, pady: 4)
+    @app.create_widget('ttk::separator', parent: info_frame,
+      orient: :vertical).pack(side: :left, fill: :y, pady: 4)
 
-    @app.command('ttk::label', '.status.info.ruby', text: "Ruby #{RUBY_VERSION}", anchor: :e)
-    @app.command(:pack, '.status.info.ruby', side: :left, padx: 8, pady: 4)
+    @app.create_widget('ttk::label', parent: info_frame,
+      text: "Ruby #{RUBY_VERSION}", anchor: :e).pack(side: :left, padx: 8, pady: 4)
   end
 
   def build_log
-    @app.command('ttk::labelframe', '.log', text: 'Output')
-    @app.command(:pack, '.log', fill: :both, expand: 1, padx: 10, pady: 5)
+    log = @app.create_widget('ttk::labelframe', text: 'Output')
+    log.pack(fill: :both, expand: 1, padx: 10, pady: 5)
 
-    @app.command('ttk::frame', '.log.f')
-    @app.command(:pack, '.log.f', fill: :both, expand: 1, padx: 5, pady: 5)
-    @app.command(:pack, 'propagate', '.log.f', 0)
+    log_frame = @app.create_widget('ttk::frame', parent: log)
+    log_frame.pack(fill: :both, expand: 1, padx: 5, pady: 5)
+    @app.command(:pack, 'propagate', log_frame, 0)
 
-    @app.command(:text, '.log.f.text', width: 80, height: 15, wrap: :none)
-    @app.command(:pack, '.log.f.text', side: :left, fill: :both, expand: 1)
+    @log_text = @app.create_widget(:text, parent: log_frame,
+      width: 80, height: 15, wrap: :none)
+    @log_text.pack(side: :left, fill: :both, expand: 1)
 
-    @app.command('ttk::scrollbar', '.log.f.vsb', orient: :vertical, command: '.log.f.text yview')
-    @app.command('.log.f.text', 'configure', yscrollcommand: '.log.f.vsb set')
-    @app.command(:pack, '.log.f.vsb', side: :right, fill: :y)
+    vsb = @app.create_widget('ttk::scrollbar', parent: log_frame,
+      orient: :vertical, command: "#{@log_text} yview")
+    @log_text.command(:configure, yscrollcommand: "#{vsb} set")
+    vsb.pack(side: :right, fill: :y)
   end
 
   def collect_files
@@ -199,24 +202,16 @@ class ThreadingDemo
     max_files ||= 5 if ENV['TK_READY_PORT'] # test mode -- don't hash 200+ files
     @files = @files.first(max_files) if max_files && max_files > 0
 
-    @app.command('.status.info.files', 'configure', text: "#{@files.size} files")
+    @files_label.command(:configure, text: "#{@files.size} files")
   end
 
   def current_mode
-    @app.command(:set, '::mode')
+    @app.get_variable('::mode')
   end
 
-  def get_var(name)
-    @app.command(:set, name)
-  end
-
-  def set_var(name, value)
-    @app.command(:set, name, value)
-  end
-
-  def set_combo_enabled(path)
+  def set_combo_enabled(widget)
     # ttk state: must clear disabled AND set readonly in one call
-    @app.tcl_eval("#{path} state {!disabled readonly}")
+    @app.tcl_eval("#{widget} state {!disabled readonly}")
   end
 
   def start_hashing
@@ -224,20 +219,20 @@ class ThreadingDemo
     @paused = false
     @stop_requested = false
 
-    @app.command('.ctrl.start', 'state', 'disabled')
-    @app.command('.ctrl.algo', 'state', 'disabled')
-    @app.command('.ctrl.mode', 'state', 'disabled')
-    @app.command('.log.f.text', 'delete', '1.0', 'end')
-    set_var('::progress', 0)
-    @app.command('.status.progress.status', 'configure', text: 'Hashing...')
+    @start_btn.command(:state, 'disabled')
+    @algo_combo.command(:state, 'disabled')
+    @mode_combo.command(:state, 'disabled')
+    @log_text.command(:delete, '1.0', 'end')
+    @app.set_variable('::progress', 0)
+    @status_label.command(:configure, text: 'Hashing...')
 
-    if get_var('::allow_pause').to_i == 1
-      @app.command('.ctrl.pause', 'state', '!disabled')
+    if @app.get_variable('::allow_pause').to_i == 1
+      @pause_btn.command(:state, '!disabled')
     else
-      @app.command('.ctrl.pause', 'state', 'disabled')
+      @pause_btn.command(:state, 'disabled')
     end
 
-    @app.command(:wm, 'resizable', '.', 0, 0) unless current_mode == 'Ractor'
+    @app.set_window_resizable(false, false) unless current_mode == 'Ractor'
 
     @metrics = {
       start_time: Process.clock_gettime(Process::CLOCK_MONOTONIC),
@@ -257,13 +252,13 @@ class ThreadingDemo
 
   def toggle_pause
     @paused = !@paused
-    @app.command('.ctrl.pause', 'configure', text: @paused ? 'Resume' : 'Pause')
-    @app.command('.status.progress.status', 'configure', text: @paused ? 'Paused' : 'Hashing...')
-    @app.command(:wm, 'resizable', '.', @paused ? 1 : 0, @paused ? 1 : 0)
+    @pause_btn.command(:configure, text: @paused ? 'Resume' : 'Pause')
+    @status_label.command(:configure, text: @paused ? 'Paused' : 'Hashing...')
+    @app.set_window_resizable(@paused, @paused)
     if @paused
-      set_combo_enabled('.ctrl.mode')
+      set_combo_enabled(@mode_combo)
     else
-      @app.command('.ctrl.mode', 'state', 'disabled')
+      @mode_combo.command(:state, 'disabled')
     end
 
     if @background_task
@@ -281,22 +276,22 @@ class ThreadingDemo
     @background_task&.stop
     @background_task = nil
 
-    @app.command('.ctrl.start', 'state', '!disabled')
-    @app.command('.ctrl.pause', 'state', 'disabled')
-    @app.command('.ctrl.pause', 'configure', text: 'Pause')
-    set_combo_enabled('.ctrl.algo')
-    set_combo_enabled('.ctrl.mode')
-    @app.command(:wm, 'resizable', '.', 1, 1)
-    @app.command('.log.f.text', 'delete', '1.0', 'end')
-    set_var('::progress', 0)
-    @app.command('.status.progress.status', 'configure', text: 'Ready')
-    @app.command('.status.progress.file', 'configure', text: '')
+    @start_btn.command(:state, '!disabled')
+    @pause_btn.command(:state, 'disabled')
+    @pause_btn.command(:configure, text: 'Pause')
+    set_combo_enabled(@algo_combo)
+    set_combo_enabled(@mode_combo)
+    @app.set_window_resizable(true, true)
+    @log_text.command(:delete, '1.0', 'end')
+    @app.set_variable('::progress', 0)
+    @status_label.command(:configure, text: 'Ready')
+    @file_label.command(:configure, text: '')
 
-    set_var('::mode', 'Thread')
-    set_var('::algorithm', 'SHA256')
-    set_var('::chunk_size', 3)
-    @app.command('.ctrl.batch_val', 'configure', text: '3')
-    set_var('::allow_pause', 0)
+    @app.set_variable('::mode', 'Thread')
+    @app.set_variable('::algorithm', 'SHA256')
+    @app.set_variable('::chunk_size', 3)
+    @batch_val.command(:configure, text: '3')
+    @app.set_variable('::allow_pause', 0)
   end
 
   def write_metrics(status = "DONE")
@@ -308,9 +303,9 @@ class ThreadingDemo
       f.puts "=" * 60
       f.puts "Status: #{status} at #{Time.now}"
       f.puts "Mode: #{m[:mode]}"
-      f.puts "Algorithm: #{get_var('::algorithm')}"
+      f.puts "Algorithm: #{@app.get_variable('::algorithm')}"
       f.puts "Files processed: #{m[:files_done]}/#{m[:total]}"
-      chunk = [get_var('::chunk_size').to_f.round, 1].max
+      chunk = [@app.get_variable('::chunk_size').to_f.round, 1].max
       f.puts "Batch size: #{chunk}"
       f.puts "-" * 40
       f.puts "Elapsed: #{elapsed.round(3)}s"
@@ -328,14 +323,14 @@ class ThreadingDemo
 
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @metrics[:start_time]
     files_per_sec = (@metrics[:files_done] / elapsed).round(1)
-    @app.command('.status.progress.status', 'configure',
+    @status_label.command(:configure,
       text: "Done #{elapsed.round(2)}s (#{files_per_sec}/s)")
-    @app.command('.status.progress.file', 'configure', text: '')
-    @app.command('.ctrl.start', 'state', '!disabled')
-    @app.command('.ctrl.pause', 'state', 'disabled')
-    set_combo_enabled('.ctrl.algo')
-    set_combo_enabled('.ctrl.mode')
-    @app.command(:wm, 'resizable', '.', 1, 1)
+    @file_label.command(:configure, text: '')
+    @start_btn.command(:state, '!disabled')
+    @pause_btn.command(:state, 'disabled')
+    set_combo_enabled(@algo_combo)
+    set_combo_enabled(@mode_combo)
+    @app.set_window_resizable(true, true)
     @running = false
   end
 
@@ -347,10 +342,10 @@ class ThreadingDemo
     ui_mode = current_mode
 
     files = @files.dup
-    algo_name = get_var('::algorithm')
-    chunk_size = [get_var('::chunk_size').to_f.round, 1].max
+    algo_name = @app.get_variable('::algorithm')
+    chunk_size = [@app.get_variable('::chunk_size').to_f.round, 1].max
     base_dir = Dir.pwd
-    allow_pause = get_var('::allow_pause').to_i == 1
+    allow_pause = @app.get_variable('::allow_pause').to_i == 1
 
     work_data = {
       files: files,
@@ -409,11 +404,11 @@ class ThreadingDemo
     @background_task.on_progress do |msg|
       ui_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-      @app.command('.log.f.text', 'insert', 'end', msg[:updates])
-      @app.command('.log.f.text', 'see', 'end')
+      @log_text.command(:insert, 'end', msg[:updates])
+      @log_text.command(:see, 'end')
       pct = ((msg[:index] + 1).to_f / msg[:total] * 100).round
-      set_var('::progress', pct)
-      @app.command('.status.progress.status', 'configure',
+      @app.set_variable('::progress', pct)
+      @status_label.command(:configure,
         text: "Hashing... #{msg[:index] + 1}/#{msg[:total]}")
 
       @metrics[:ui_update_count] += 1
@@ -450,7 +445,7 @@ if TeekDemo.active?
       app = demo.app
 
       # Set batch size high for fast processing
-      app.command(:set, '::chunk_size', 100)
+      app.set_variable('::chunk_size', 100)
 
       # Test matrix: [mode, pause_enabled]
       tests = [['None', false], ['None+update', false], ['Thread', false]]
@@ -465,11 +460,11 @@ if TeekDemo.active?
           mode, pause = tests[test_index]
 
           # Configure mode and pause
-          app.command(:set, '::mode', mode)
-          app.command(:set, '::allow_pause', pause ? 1 : 0)
+          app.set_variable('::mode', mode)
+          app.set_variable('::allow_pause', pause ? 1 : 0)
 
           # Start hashing
-          app.after(100) { app.command('.ctrl.start', 'invoke') }
+          app.after(100) { demo.start_hashing }
 
           # Wait for completion
           check_done = proc do
@@ -479,7 +474,7 @@ if TeekDemo.active?
               test_index += 1
               if test_index < tests.size
                 app.after(200) {
-                  app.command('.ctrl.reset', 'invoke')
+                  demo.reset
                   app.after(200, &run_next_test)
                 }
               else

@@ -12,14 +12,13 @@ require 'teek'
 app = Teek::App.new
 
 app.show
-app.tcl_eval('wm title . "Hello Teek"')
+app.set_window_title('Hello Teek')
 
-# Create widgets with tcl_eval
-app.tcl_eval('ttk::label .lbl -text "Hello, world!"')
-app.tcl_eval('pack .lbl -pady 10')
-
-# Or use the command helper — Ruby values are auto-quoted,
+# Create widgets with the command helper — Ruby values are auto-quoted,
 # symbols pass through bare, and procs become callbacks
+app.command('ttk::label', '.lbl', text: 'Hello, world!')
+app.command(:pack, '.lbl', pady: 10)
+
 app.command('ttk::button', '.btn', text: 'Click me', command: proc {
   app.command('.lbl', :configure, text: 'Clicked!')
 })
@@ -28,17 +27,57 @@ app.command(:pack, '.btn', pady: 10)
 app.mainloop
 ```
 
+## Widgets
+
+`create_widget` returns a `Teek::Widget` — a thin wrapper that holds the widget path and provides convenience methods. Paths are auto-generated from the widget type.
+
+```ruby
+btn = app.create_widget('ttk::button', text: 'Click me')
+btn.pack(pady: 10)
+
+btn.command(:configure, text: 'Updated')  # widget subcommand
+btn.destroy
+```
+
+Nest widgets under a parent:
+
+```ruby
+frame = app.create_widget('ttk::frame')
+frame.pack(fill: :both, expand: 1)
+
+label = app.create_widget('ttk::label', parent: frame, text: 'Hello')
+label.pack(pady: 5)
+```
+
+Widgets work anywhere a path string is expected (via `to_s`):
+
+```ruby
+app.command(:pack, btn, pady: 10)       # equivalent to btn.pack(pady: 10)
+app.tcl_eval("#{btn} configure -text New")  # string interpolation works
+```
+
+The raw `app.command` approach still works for cases where you don't need a wrapper:
+
+```ruby
+app.command('ttk::label', '.mylabel', text: 'Direct')
+app.command(:pack, '.mylabel')
+```
+
 ## Callbacks
 
-Register Ruby procs as Tcl callbacks using `app.register_callback`:
+Pass a `proc` to `command` and it becomes a Tcl callback automatically:
 
 ```ruby
 app = Teek::App.new
 
-cb = app.register_callback(proc { |*args|
-  puts "clicked!"
-})
-app.tcl_eval("button .b -text Click -command {ruby_callback #{cb}}")
+app.command(:button, '.b', text: 'Click', command: proc { puts "clicked!" })
+```
+
+Use `bind` for event bindings with optional substitutions:
+
+```ruby
+app.bind('.b', 'Enter') { puts "hovered" }
+app.bind('.c', 'Button-1', :x, :y) { |x, y| puts "#{x},#{y}" }
 ```
 
 ### Stopping event propagation
@@ -46,11 +85,10 @@ app.tcl_eval("button .b -text Click -command {ruby_callback #{cb}}")
 In `bind` handlers, you can stop an event from propagating to subsequent binding tags by throwing `:teek_break`:
 
 ```ruby
-cb = app.register_callback(proc { |*|
-  puts "handled - stop here"
+app.bind('.entry', 'KeyPress', :keysym) { |key|
+  puts "handled #{key} - stop here"
   throw :teek_break
-})
-app.tcl_eval("bind .entry <Key-Return> {ruby_callback #{cb}}")
+}
 ```
 
 This is equivalent to Tcl's `break` command in a bind script.

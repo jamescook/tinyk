@@ -3,6 +3,7 @@
 require 'tcltklib'
 require_relative 'teek/version'
 require_relative 'teek/ractor_support'
+require_relative 'teek/widget'
 
 # Ruby interface to Tcl/Tk. Provides a thin wrapper around a Tcl interpreter
 # with Ruby callbacks, event bindings, and background work support.
@@ -52,6 +53,7 @@ module Teek
       @interp.tcl_eval('package require Tk')
       hide
       @widgets = {}
+      @widget_counters = Hash.new(0)
       debug ||= !!ENV['TEEK_DEBUG']
       track_widgets = true if debug
       setup_widget_tracking if track_widgets
@@ -207,6 +209,36 @@ module Teek
         parts << tcl_value(value)
       end
       @interp.tcl_eval(parts.join(' '))
+    end
+
+    # Create a Tk widget and return a {Widget} wrapper.
+    #
+    # Auto-generates a unique path if none is given. The path is derived from
+    # the widget type and a monotonic counter.
+    #
+    # @param type [String, Symbol] Tk widget command (e.g. 'ttk::button', :canvas)
+    # @param path [String, nil] explicit Tk path, or nil for auto-naming
+    # @param parent [Widget, String, nil] parent widget for path nesting
+    # @param kwargs keyword arguments passed to the Tk widget command
+    # @return [Widget] the created widget
+    #
+    # @example Auto-named
+    #   btn = app.create_widget('ttk::button', text: 'Click')
+    #   # btn.path => ".ttkbtn1"
+    #
+    # @example Explicit path
+    #   frm = app.create_widget('ttk::frame', '.myframe')
+    #
+    # @example Nested under a parent
+    #   frm = app.create_widget('ttk::frame')
+    #   btn = app.create_widget('ttk::button', parent: frm, text: 'Click')
+    #   # btn.path => ".ttkfrm1.ttkbtn1"
+    #
+    def create_widget(type, path = nil, parent: nil, **kwargs)
+      type_s = type.to_s
+      path ||= next_widget_path(type_s, parent)
+      command(type_s, path, **kwargs)
+      Widget.new(self, path)
     end
 
     # Add a directory to Tcl's package search path.
@@ -541,6 +573,54 @@ module Teek
     end
 
     private
+
+    # Short prefixes for common Tk widget types.
+    # The base name (after the last ::) is looked up here; the namespace
+    # prefix (e.g. "ttk") is prepended verbatim.  Unmapped types fall
+    # back to the full lowercased name with colons stripped.
+    WIDGET_PREFIXES = {
+      'button'      => 'btn',
+      'label'       => 'lbl',
+      'entry'       => 'ent',
+      'frame'       => 'frm',
+      'text'        => 'txt',
+      'canvas'      => 'cvs',
+      'scrollbar'   => 'sb',
+      'scale'       => 'scl',
+      'checkbutton' => 'chk',
+      'radiobutton' => 'rad',
+      'combobox'    => 'cbx',
+      'labelframe'  => 'lfrm',
+      'treeview'    => 'tv',
+      'notebook'    => 'nb',
+      'progressbar' => 'pbar',
+      'separator'   => 'sep',
+      'spinbox'     => 'spn',
+      'panedwindow' => 'pw',
+      'toplevel'    => 'top',
+      'menubutton'  => 'mbtn',
+      'sizegrip'    => 'sg',
+    }.freeze
+    private_constant :WIDGET_PREFIXES
+
+    def next_widget_path(type, parent)
+      prefix = widget_prefix(type)
+      @widget_counters[prefix] += 1
+      parent_path = parent ? parent.to_s : ''
+      if parent_path.empty? || parent_path == '.'
+        ".#{prefix}#{@widget_counters[prefix]}"
+      else
+        "#{parent_path}.#{prefix}#{@widget_counters[prefix]}"
+      end
+    end
+
+    def widget_prefix(type)
+      parts = type.downcase.split('::')
+      base = parts.pop
+      ns = parts.join
+      short = WIDGET_PREFIXES[base] || base
+      "#{ns}#{short}"
+    end
 
     # Force Tcl to scan auto_path for pkgIndex.tcl files so that
     # package_names and package_versions reflect all discoverable packages.

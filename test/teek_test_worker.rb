@@ -13,7 +13,16 @@
 #   result = Teek::TestWorker.run_test("label = TkLabel.new(root); ...")
 #   Teek::TestWorker.stop
 
+require 'teek'
 require 'stringio'
+
+# Test-only extension to reset widget auto-naming counters between tests.
+module Teek::AppTestExtensions
+  def reset_widget_counters!
+    @widget_counters = Hash.new(0)
+  end
+end
+Teek::App.include(Teek::AppTestExtensions)
 require 'fileutils'
 require 'tmpdir'
 require 'json'
@@ -324,6 +333,7 @@ class Teek::TestWorker
       @app.set_window_geometry('')
 
       reset_grid_config!
+      @app.reset_widget_counters!
     end
 
     # Reset grid geometry manager state for a widget.

@@ -23,21 +23,18 @@ class Calculator
 
   def build_ui
     @app.show
-    @app.command(:wm, 'title', '.', 'Calculator')
-    @app.command(:wm, 'resizable', '.', 0, 0)
+    @app.set_window_title('Calculator')
+    @app.set_window_resizable(false, false)
 
     # Button style — use a larger font since macOS aqua theme
     # ignores vertical stretch; font size drives button height
     @app.tcl_eval('ttk::style configure Calc.TButton -font {{TkDefaultFont} 18}')
 
     # Display
-    @app.command(:set, '::display', '0')
-    @app.command('ttk::entry', '.display',
-      textvariable: '::display',
-      justify: :right,
-      state: :readonly,
-      font: '{TkDefaultFont} 24')
-    @app.command(:grid, '.display', row: 0, column: 0, columnspan: 4,
+    @app.set_variable('::display', '0')
+    @display = @app.create_widget('ttk::entry', textvariable: '::display',
+      justify: :right, state: :readonly, font: '{TkDefaultFont} 24')
+    @display.grid(row: 0, column: 0, columnspan: 4,
       sticky: :ew, padx: 4, pady: 4, ipady: 8)
 
     build_buttons
@@ -82,32 +79,30 @@ class Calculator
   # Click a button by its label (for demo/testing).
   # In recording mode, shows the pressed visual state briefly before invoking.
   def click(label, recording: false)
-    path = @buttons[label]
-    return unless path
+    widget = @buttons[label]
+    return unless widget
     if recording
-      @app.command(path, 'state', 'pressed')
+      widget.command('state', 'pressed')
       @app.after(80) {
-        @app.command(path, 'state', '!pressed')
-        @app.command(path, 'invoke')
+        widget.command('state', '!pressed')
+        widget.command(:invoke)
       }
     else
-      @app.command(path, 'invoke')
+      widget.command(:invoke)
     end
   end
 
   def button(text, row, col, style: :num, colspan: 1, &action)
-    @btn_id = (@btn_id || 0) + 1
     @buttons ||= {}
-    path = ".btn_#{@btn_id}"
-    @buttons[text] = path
-    @app.command('ttk::button', path, text: text, style: 'Calc.TButton',
+    widget = @app.create_widget('ttk::button', text: text, style: 'Calc.TButton',
       command: proc { |*| action.call })
-    @app.command(:grid, path, row: row, column: col, columnspan: colspan,
+    @buttons[text] = widget
+    widget.grid(row: row, column: col, columnspan: colspan,
       sticky: :nsew, padx: 2, pady: 2)
   end
 
   def update_display
-    @app.command(:set, '::display', @display_value)
+    @app.set_variable('::display', @display_value)
   end
 
   # --- Calculator logic ---
