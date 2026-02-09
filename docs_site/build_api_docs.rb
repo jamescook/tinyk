@@ -205,18 +205,8 @@ has_children: true
       methods += (doc['instance_methods']&.size || 0)
     end
 
-    # Try to get gem version
-    version = begin
-      spec_file = File.join(File.dirname(@output_dir), '..', 'teek.gemspec')
-      if File.exist?(spec_file)
-        content = File.read(spec_file)
-        content[/version\s*=\s*["']([^"']+)["']/, 1] || 'unknown'
-      else
-        'unknown'
-      end
-    rescue
-      'unknown'
-    end
+    require_relative '../lib/teek/version'
+    version = Teek::VERSION
 
     includes_dir = File.join(File.dirname(@output_dir), '_includes')
     content = <<~HTML
