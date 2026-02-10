@@ -4,6 +4,7 @@ require 'tcltklib'
 require_relative 'teek/version'
 require_relative 'teek/ractor_support'
 require_relative 'teek/widget'
+require_relative 'teek/photo'
 
 # Ruby interface to Tcl/Tk. Provides a thin wrapper around a Tcl interpreter
 # with Ruby callbacks, event bindings, and background work support.

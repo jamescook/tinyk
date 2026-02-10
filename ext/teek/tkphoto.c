@@ -1,4 +1,4 @@
-/* tkphoto.c - Photo image C functions for tk-ng
+/* tkphoto.c - Photo image C functions for teek
  *
  * Fast pixel manipulation using Tk's photo image C API.
  * These functions bypass Tcl string parsing for better performance.
@@ -18,8 +18,9 @@
  *   width      - Image width in pixels
  *   height     - Image height in pixels
  *   opts       - Optional hash:
- *                :x, :y    - destination offsets (default 0,0)
- *                :format   - :rgba (default) or :argb
+ *                :x, :y       - destination offsets (default 0,0)
+ *                :format      - :rgba (default) or :argb
+ *                :composite   - :set (default, overwrite) or :overlay (alpha blend)
  *
  * The pixel_data must be exactly width * height * 4 bytes.
  *
@@ -38,6 +39,7 @@ interp_photo_put_block(int argc, VALUE *argv, VALUE self)
     Tk_PhotoImageBlock block;
     int width, height, x_off, y_off;
     int is_argb = 0;
+    int comp_rule = TK_PHOTO_COMPOSITE_SET;
     long expected_size;
 
     rb_scan_args(argc, argv, "41", &photo_path, &pixel_data, &width_val, &height_val, &opts);
@@ -74,6 +76,12 @@ interp_photo_put_block(int argc, VALUE *argv, VALUE self)
                 is_argb = 1;
             }
         }
+        val = rb_hash_aref(opts, ID2SYM(rb_intern("composite")));
+        if (!NIL_P(val) && TYPE(val) == T_SYMBOL) {
+            if (rb_intern("overlay") == SYM2ID(val)) {
+                comp_rule = TK_PHOTO_COMPOSITE_OVERLAY;
+            }
+        }
     }
 
     /* Find the photo image by Tcl path */
@@ -105,7 +113,7 @@ interp_photo_put_block(int argc, VALUE *argv, VALUE self)
 
     /* Write pixels to the photo image */
     if (Tk_PhotoPutBlock(tip->interp, photo, &block, x_off, y_off,
-                         width, height, TK_PHOTO_COMPOSITE_SET) != TCL_OK) {
+                         width, height, comp_rule) != TCL_OK) {
         rb_raise(eTclError, "Tk_PhotoPutBlock failed: %s",
                  Tcl_GetStringResult(tip->interp));
     }
@@ -129,6 +137,7 @@ interp_photo_put_block(int argc, VALUE *argv, VALUE self)
  *                :zoom_x, :zoom_y       - zoom factors (default 1,1)
  *                :subsample_x, :subsample_y - subsample factors (default 1,1)
  *                :format       - :rgba (default) or :argb
+ *                :composite    - :set (default, overwrite) or :overlay (alpha blend)
  *
  * The pixel_data must be exactly width * height * 4 bytes.
  * Zoom replicates pixels (zoom=3 makes each pixel 3x3).
@@ -151,6 +160,7 @@ interp_photo_put_zoomed_block(int argc, VALUE *argv, VALUE self)
     int zoom_x, zoom_y, subsample_x, subsample_y;
     int dest_width, dest_height;
     int is_argb = 0;
+    int comp_rule = TK_PHOTO_COMPOSITE_SET;
     long expected_size;
 
     rb_scan_args(argc, argv, "41", &photo_path, &pixel_data, &width_val, &height_val, &opts);
@@ -200,6 +210,12 @@ interp_photo_put_zoomed_block(int argc, VALUE *argv, VALUE self)
                 is_argb = 1;
             }
         }
+        val = rb_hash_aref(opts, ID2SYM(rb_intern("composite")));
+        if (!NIL_P(val) && TYPE(val) == T_SYMBOL) {
+            if (rb_intern("overlay") == SYM2ID(val)) {
+                comp_rule = TK_PHOTO_COMPOSITE_OVERLAY;
+            }
+        }
     }
 
     /* Validate zoom/subsample */
@@ -245,7 +261,7 @@ interp_photo_put_zoomed_block(int argc, VALUE *argv, VALUE self)
     if (Tk_PhotoPutZoomedBlock(tip->interp, photo, &block, x_off, y_off,
                                dest_width, dest_height,
                                zoom_x, zoom_y, subsample_x, subsample_y,
-                               TK_PHOTO_COMPOSITE_SET) != TCL_OK) {
+                               comp_rule) != TCL_OK) {
         rb_raise(eTclError, "Tk_PhotoPutZoomedBlock failed: %s",
                  Tcl_GetStringResult(tip->interp));
     }
@@ -461,6 +477,151 @@ interp_photo_blank(VALUE self, VALUE photo_path)
 }
 
 /* ---------------------------------------------------------
+ * Interp#photo_set_size(photo_path, width, height)
+ *
+ * Set the dimensions of a photo image using Tk_PhotoSetSize.
+ *
+ * Arguments:
+ *   photo_path - Tcl path of the photo image
+ *   width      - New width in pixels
+ *   height     - New height in pixels
+ *
+ * Returns nil.
+ *
+ * See: https://www.tcl-lang.org/man/tcl8.6/TkLib/FindPhoto.htm
+ * --------------------------------------------------------- */
+
+static VALUE
+interp_photo_set_size(VALUE self, VALUE photo_path, VALUE width_val, VALUE height_val)
+{
+    struct tcltk_interp *tip = get_interp(self);
+    Tk_PhotoHandle photo;
+    int width, height;
+
+    StringValue(photo_path);
+    width = NUM2INT(width_val);
+    height = NUM2INT(height_val);
+
+    if (width < 0 || height < 0) {
+        rb_raise(rb_eArgError, "width and height must be non-negative");
+    }
+
+    photo = Tk_FindPhoto(tip->interp, StringValueCStr(photo_path));
+    if (!photo) {
+        rb_raise(eTclError, "photo image not found: %s", StringValueCStr(photo_path));
+    }
+
+    if (Tk_PhotoSetSize(tip->interp, photo, width, height) != TCL_OK) {
+        rb_raise(eTclError, "Tk_PhotoSetSize failed: %s",
+                 Tcl_GetStringResult(tip->interp));
+    }
+
+    return Qnil;
+}
+
+/* ---------------------------------------------------------
+ * Interp#photo_expand(photo_path, width, height)
+ *
+ * Expand a photo image to at least the given dimensions using Tk_PhotoExpand.
+ * Will not shrink the image if it is already larger.
+ *
+ * Arguments:
+ *   photo_path - Tcl path of the photo image
+ *   width      - Minimum width in pixels
+ *   height     - Minimum height in pixels
+ *
+ * Returns nil.
+ *
+ * See: https://www.tcl-lang.org/man/tcl8.6/TkLib/FindPhoto.htm
+ * --------------------------------------------------------- */
+
+static VALUE
+interp_photo_expand(VALUE self, VALUE photo_path, VALUE width_val, VALUE height_val)
+{
+    struct tcltk_interp *tip = get_interp(self);
+    Tk_PhotoHandle photo;
+    int width, height;
+
+    StringValue(photo_path);
+    width = NUM2INT(width_val);
+    height = NUM2INT(height_val);
+
+    if (width < 0 || height < 0) {
+        rb_raise(rb_eArgError, "width and height must be non-negative");
+    }
+
+    photo = Tk_FindPhoto(tip->interp, StringValueCStr(photo_path));
+    if (!photo) {
+        rb_raise(eTclError, "photo image not found: %s", StringValueCStr(photo_path));
+    }
+
+    if (Tk_PhotoExpand(tip->interp, photo, width, height) != TCL_OK) {
+        rb_raise(eTclError, "Tk_PhotoExpand failed: %s",
+                 Tcl_GetStringResult(tip->interp));
+    }
+
+    return Qnil;
+}
+
+/* ---------------------------------------------------------
+ * Interp#photo_get_pixel(photo_path, x, y)
+ *
+ * Read a single pixel from a photo image using Tk_PhotoGetImage.
+ * Faster than going through Tcl's "$photo get x y" string parsing.
+ *
+ * Arguments:
+ *   photo_path - Tcl path of the photo image
+ *   x          - X coordinate
+ *   y          - Y coordinate
+ *
+ * Returns [r, g, b, a] array.
+ *
+ * See: https://www.tcl-lang.org/man/tcl8.6/TkLib/FindPhoto.htm
+ * --------------------------------------------------------- */
+
+static VALUE
+interp_photo_get_pixel(VALUE self, VALUE photo_path, VALUE x_val, VALUE y_val)
+{
+    struct tcltk_interp *tip = get_interp(self);
+    Tk_PhotoHandle photo;
+    Tk_PhotoImageBlock block;
+    int x, y;
+    unsigned char *src;
+    int r_off, g_off, b_off, a_off;
+
+    StringValue(photo_path);
+    x = NUM2INT(x_val);
+    y = NUM2INT(y_val);
+
+    photo = Tk_FindPhoto(tip->interp, StringValueCStr(photo_path));
+    if (!photo) {
+        rb_raise(eTclError, "photo image not found: %s", StringValueCStr(photo_path));
+    }
+
+    if (!Tk_PhotoGetImage(photo, &block)) {
+        rb_raise(eTclError, "failed to get photo image data");
+    }
+
+    if (x < 0 || x >= block.width || y < 0 || y >= block.height) {
+        rb_raise(rb_eArgError, "coordinates (%d, %d) outside image bounds (%d x %d)",
+                 x, y, block.width, block.height);
+    }
+
+    r_off = block.offset[0];
+    g_off = block.offset[1];
+    b_off = block.offset[2];
+    a_off = block.offset[3];
+
+    src = block.pixelPtr + y * block.pitch + x * block.pixelSize;
+
+    return rb_ary_new_from_args(4,
+        INT2FIX(src[r_off]),
+        INT2FIX(src[g_off]),
+        INT2FIX(src[b_off]),
+        INT2FIX((block.pixelSize >= 4) ? src[a_off] : 255));
+}
+
+/* ---------------------------------------------------------
  * Init_tkphoto - Register photo image methods on Teek::Interp class
  *
  * Called from Init_tcltklib in tcltkbridge.c
@@ -473,5 +634,8 @@ Init_tkphoto(VALUE cInterp)
     rb_define_method(cInterp, "photo_put_zoomed_block", interp_photo_put_zoomed_block, -1);
     rb_define_method(cInterp, "photo_get_image", interp_photo_get_image, -1);
     rb_define_method(cInterp, "photo_get_size", interp_photo_get_size, 1);
+    rb_define_method(cInterp, "photo_set_size", interp_photo_set_size, 3);
+    rb_define_method(cInterp, "photo_expand", interp_photo_expand, 3);
+    rb_define_method(cInterp, "photo_get_pixel", interp_photo_get_pixel, 3);
     rb_define_method(cInterp, "photo_blank", interp_photo_blank, 1);
 }
