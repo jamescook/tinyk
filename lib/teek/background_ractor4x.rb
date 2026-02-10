@@ -174,7 +174,17 @@ module Teek
 
         # Wrap in isolated proc for Ractor sharing. The block can only access
         # its parameters (task, data), not outer-scope variables.
-        shareable_block = Ractor.shareable_proc(&@work_block)
+        isolation_error = false
+        begin
+          shareable_block = Ractor.shareable_proc(&@work_block)
+        rescue Ractor::IsolationError
+          isolation_error = true
+        end
+        if isolation_error
+          raise Ractor::IsolationError,
+            "Background work block must not reference outside variables (including `app`). " \
+            "Use t.yield() to send results to on_progress, which runs on the main thread."
+        end
 
         start_ractor(shareable_block)
         start_polling

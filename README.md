@@ -175,3 +175,49 @@ The debugger provides three tabs:
 - **Watches** — right-click or double-click a variable to watch it; tracks last 50 values with timestamps
 
 The debugger runs in the same interpreter as your app (as a [Toplevel](https://www.tcl-lang.org/man/tcl8.6/TkCmd/toplevel.htm) window) and filters its own widgets from `app.widgets`.
+
+## Background Work
+
+Tk applications need to keep the UI responsive while doing CPU-intensive work. The `Teek.background_work` API runs work in a background Ractor with automatic UI integration.
+
+**This API is designed for Ruby 4.x.** Ractors on Ruby 3.x lack shareable procs, making them impractical for our use case. A `:thread` mode exists but is rarely beneficial — Ruby threads share the GVL, so thread-based background work often performs *worse* than running inline unless the work involves non-blocking I/O.
+
+```ruby
+app = Teek::App.new
+app.show
+app.set_variable('::progress', 0)
+
+log = app.create_widget(:text, width: 60, height: 10)
+log.pack(fill: :both, expand: 1, padx: 10, pady: 5)
+
+app.create_widget('ttk::progressbar', variable: '::progress', maximum: 100)
+  .pack(fill: :x, padx: 10, pady: 5)
+
+files = Dir.glob('**/*').select { |f| File.file?(f) }
+
+task = Teek::BackgroundWork.new(app, files) do |t, data|
+  # Background work goes here - this block cannot access Tk
+  data.each_with_index do |file, i|
+    t.check_pause
+    hash = Digest::SHA256.file(file).hexdigest
+    t.yield({ file: file, hash: hash, pct: (i + 1) * 100 / data.size })
+  end
+end.on_progress do |msg|
+  # This block can access Tk
+  log.command(:insert, :end, "#{msg[:file]}: #{msg[:hash]}\n")
+  log.command(:see, :end)
+  app.set_variable('::progress', msg[:pct])
+end.on_done do
+  # This block can also access Tk
+  log.command(:insert, :end, "Done!\n")
+end
+
+# Control the task
+task.pause   # Pause work (resumes at next t.check_pause)
+task.resume  # Resume paused work
+task.stop    # Stop completely
+```
+
+The work block runs in a background Ractor and cannot access Tk directly. Use `t.yield()` to send results to `on_progress`, which runs on the main thread where Tk is available. Callbacks (`on_progress`, `on_done`) can be chained in any order.
+
+See [`sample/threading_demo.rb`](sample/threading_demo.rb) for a complete file hasher example.
