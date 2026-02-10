@@ -48,7 +48,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     zlib1g-dev \
     libssl-dev \
     libx11-dev \
-    libxcursor-dev
+    libxcursor-dev \
+    libsdl2-dev \
+    libsdl2-ttf-dev
 
 # Tcl/Tk dev packages for compilation
 ARG TCL_VERSION=9.0
@@ -90,22 +92,26 @@ RUN --mount=type=cache,target=/bundle-cache \
 COPY Rakefile ./
 COPY ext/ ext/
 COPY lib/ lib/
+COPY teek-sdl2/ teek-sdl2/
 
-# Compile the main extension
+# Compile the main extension (tcltklib)
 RUN MAKEFLAGS="-j$(nproc)" MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH) && \
     if [ "${TCL_VERSION}" = "8.6" ]; then \
-        bundle exec rake compile -- --with-tcltkversion=8.6 \
+        bundle exec rake compile:tcltklib -- --with-tcltkversion=8.6 \
             --with-tcl-lib=/usr/lib/${MULTIARCH} \
             --with-tk-lib=/usr/lib/${MULTIARCH} \
             --with-tcl-include=/usr/include/tcl8.6 \
             --with-tk-include=/usr/include/tcl8.6; \
     else \
-        bundle exec rake compile -- --with-tcltkversion=9.0 \
+        bundle exec rake compile:tcltklib -- --with-tcltkversion=9.0 \
             --with-tcl-lib=/usr/lib/${MULTIARCH} \
             --with-tk-lib=/usr/lib/${MULTIARCH} \
             --with-tcl-include=/usr/include/tcl9.0 \
             --with-tk-include=/usr/include/tk9.0; \
     fi
+
+# Compile teek-sdl2 (uses pkg-config for SDL2)
+RUN MAKEFLAGS="-j$(nproc)" bundle exec rake compile:teek_sdl2
 
 #############################################
 # RUNTIME STAGE - slim image for running tests
@@ -143,7 +149,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libreadline8 \
     zlib1g \
     libssl3t64 \
-    libxcursor1
+    libxcursor1 \
+    libsdl2-2.0-0 \
+    libsdl2-ttf-2.0-0
 
 # Tcl/Tk version-specific packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -189,10 +197,15 @@ COPY --from=builder /app/Gemfile /app/Gemfile
 COPY --from=builder /app/Gemfile.lock /app/Gemfile.lock
 COPY --from=builder /app/*.gemspec /app/
 
-# Copy tests and samples directly from context (not cached with compilation)
+# teek-sdl2: compiled .so + lib/test files
+COPY --from=builder /app/teek-sdl2/lib /app/teek-sdl2/lib
+COPY --from=builder /app/teek-sdl2/ext /app/teek-sdl2/ext
+
+# Copy tests, samples, and assets directly from context (not cached with compilation)
 # This allows test/sample changes without recompiling
 COPY test/ test/
 COPY sample/ sample/
+COPY teek-sdl2/test/ teek-sdl2/test/
+COPY teek-sdl2/assets/ teek-sdl2/assets/
 
-# exec replaces bash so SIGINT (Ctrl+C) goes directly to rake
-CMD ["bash", "-c", "Xvfb :99 -screen 0 1024x768x24 & sleep 1 && exec env DISPLAY=:99 bundle exec rake test"]
+CMD ["xvfb-run", "-a", "bundle", "exec", "rake", "test"]

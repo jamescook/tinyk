@@ -31,6 +31,14 @@ ext/trofs/library/trofs.tcl
 ext/trofs/tests/upstream/load.tcl
 ext/trofs/autom4te.cache/
 
+# ROM files (not distributable)
+*.nes
+
+# teek-sdl2 build artifacts
+teek-sdl2/lib/*.bundle
+teek-sdl2/lib/*.so
+teek-sdl2/ext/**/Makefile
+
 # Doc build artifacts
 docs_site/_api/
 docs_site/_site/

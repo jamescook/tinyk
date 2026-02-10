@@ -39,4 +39,7 @@ void Init_tkfont(VALUE cInterp);
 /* Tk window query functions - defined in tkwin.c */
 void Init_tkwin(VALUE cInterp);
 
+/* External event source integration - defined in tkeventsource.c */
+void Init_tkeventsource(VALUE mTeek);
+
 #endif /* TCLTKBRIDGE_H */

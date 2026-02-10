@@ -10,5 +10,8 @@
 # Main library
 lib/**/*.rb
 
+# SDL2 extension (separate gem, same namespace)
+teek-sdl2/lib/**/*.rb
+
 # Exclude tests inside lib/ (pattern is regex, not glob)
 --exclude /test/

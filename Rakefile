@@ -107,6 +107,7 @@ task yard: 'docs:yard'
 # Clean up extconf cached config files
 CLEAN.include('ext/teek/config_list')
 CLOBBER.include('tmp', 'lib/*.bundle', 'lib/*.so', 'ext/**/*.o', 'ext/**/*.bundle', 'ext/**/*.bundle.dSYM')
+CLOBBER.include('teek-sdl2/lib/*.bundle', 'teek-sdl2/lib/*.so', 'teek-sdl2/ext/**/*.o', 'teek-sdl2/ext/**/*.bundle')
 
 # Clean coverage artifacts before test runs to prevent accumulation
 CLEAN.include('coverage/.resultset.json', 'coverage/results')
@@ -118,6 +119,12 @@ if Gem::Specification.find_all_by_name('rake-compiler').any?
     ext.name = 'tcltklib'
     ext.ext_dir = 'ext/teek'
     ext.lib_dir = 'lib'
+  end
+
+  Rake::ExtensionTask.new do |ext|
+    ext.name = 'teek_sdl2'
+    ext.ext_dir = 'teek-sdl2/ext/teek_sdl2'
+    ext.lib_dir = 'teek-sdl2/lib'
   end
 end
 
@@ -176,6 +183,18 @@ def detect_platform
   when /mingw|mswin/ then 'windows'
   else 'unknown'
   end
+end
+
+namespace :sdl2 do
+  desc "Compile teek-sdl2 C extension"
+  task compile: 'compile:teek_sdl2'
+
+  Rake::TestTask.new(:test) do |t|
+    t.libs << 'teek-sdl2/test' << 'teek-sdl2/lib'
+    t.test_files = FileList['teek-sdl2/test/**/test_*.rb']
+    t.verbose = true
+  end
+  task test: 'compile:teek_sdl2'
 end
 
 task :default => :compile
@@ -272,6 +291,21 @@ namespace :docker do
   Rake::Task['docker:test'].enhance { Rake::Task['docker:prune'].invoke }
 
   namespace :test do
+    desc "Run teek-sdl2 tests in Docker"
+    task sdl2: :build do
+      tcl_version = tcl_version_from_env
+      ruby_version = ruby_version_from_env
+      image_name = docker_image_name(tcl_version, ruby_version)
+
+      puts "Running teek-sdl2 tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
+      cmd = "docker run --rm --init"
+      cmd += " -e TCL_VERSION=#{tcl_version}"
+      cmd += " #{image_name}"
+      cmd += " xvfb-run -a bundle exec rake sdl2:test"
+
+      sh cmd
+    end
+
     desc "Run tests with coverage and generate report"
     task coverage: 'docker:build' do
       tcl_version = tcl_version_from_env
@@ -307,7 +341,7 @@ namespace :docker do
   # Scan sample files for # teek-record magic comment
   # Format: # teek-record: title=My Demo, codec=vp9
   def find_recordable_samples
-    Dir['sample/**/*.rb'].filter_map do |path|
+    Dir['sample/**/*.rb', 'teek-sdl2/sample/**/*.rb'].filter_map do |path|
       first_lines = File.read(path, 500)
       match = first_lines.match(/^#\s*teek-record(?::\s*(.+))?$/)
       next unless match

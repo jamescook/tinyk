@@ -1481,6 +1481,9 @@ Init_tcltklib(void)
     /* Tk window query functions (tkwin.c) */
     Init_tkwin(cInterp);
 
+    /* External event source integration (tkeventsource.c) */
+    Init_tkeventsource(mTeek);
+
     /* Class methods for instance tracking */
     rb_define_singleton_method(cInterp, "instance_count", tcltkip_instance_count, 0);
     rb_define_singleton_method(cInterp, "instances", tcltkip_instances, 0);
