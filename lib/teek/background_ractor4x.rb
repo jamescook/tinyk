@@ -154,13 +154,20 @@ module Teek
       def close
         @done = true
         # Send stop to let the worker terminate itself — Ruby 4.x doesn't
-        # allow closing a Ractor from outside.
+        # allow closing a Ractor from outside. The message thread will
+        # raise StopIteration on the Ractor's main thread, which triggers
+        # the rescue block that sends [:done] to the output port and exits
+        # the Ractor cleanly.
         begin
           @control_port&.send(:stop)
         rescue Ractor::ClosedError
           # Already closed
         end
         @control_port = nil
+        # Wait for the bridge thread to receive [:done] and exit. Without
+        # this, the zombie bridge thread blocks subsequent operations on
+        # Windows (Ractor::Port#receive holds the GVL).
+        @bridge_thread&.join(2)
         self
       end
 
@@ -219,13 +226,20 @@ module Teek
           # Send control port back to main thread
           out.send([:control_port, control_port])
 
-          # Background thread receives from control port, forwards to queue
+          # Background thread receives from control port, forwards to queue.
+          # On :stop, interrupts the main Ractor thread with StopIteration
+          # (the main block may never call check_message) and signals the
+          # bridge thread via [:done] on the output port.
+          main_thread = Thread.current
           Thread.new do
             loop do
               begin
                 msg = control_port.receive
                 msg_queue << msg
-                break if msg == :stop
+                if msg == :stop
+                  main_thread.raise(StopIteration)
+                  break
+                end
               rescue Ractor::ClosedError
                 break
               end
