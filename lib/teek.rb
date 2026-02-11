@@ -314,7 +314,8 @@ module Teek
     # @param widget [String] Tk widget path (e.g. ".frame1")
     # @return [void]
     # @see https://www.tcl-lang.org/man/tcl8.6/TkCmd/destroy.htm destroy
-    def destroy(widget)
+    def destroy(widget = '.')
+      raise ArgumentError, 'widget path cannot be nil' if widget.nil?
       tcl_eval("destroy #{widget}")
     end
 

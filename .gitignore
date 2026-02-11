@@ -11,7 +11,7 @@ mise.toml
 /spec/reports/
 /tmp/
 /lib/*.so
-/*.gem
+*.gem
 *.bundle
 *.dSYM/
 *.o

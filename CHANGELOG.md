@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.2] - 2026-02-11
+
+### Added
+
+- `Teek::Photo` — pixel buffer API wrapping Tk photo images: `put_block`, `put_zoomed_block`, `get_image`, `get_pixel`, `get_size`, `set_size`, `expand`, `blank` with RGBA/ARGB format support and composite modes
+- `Interp#native_window_handle` — platform-native window handle (NSWindow*/X Window ID/HWND) for SDL2 embedding
+- `Interp#get_root_coords`, `Interp#coords_to_window` — window coordinate queries and hit testing
+- Paint demo sample
+- **teek-sdl2** gem (beta) — GPU-accelerated SDL2 rendering inside Tk frames. See [teek-sdl2/CHANGELOG.md](teek-sdl2/CHANGELOG.md)
+
 ### Changed
 
 - `BackgroundWork` (Ractor mode) — clearer error message when the work block references outside variables like `app`
+
+### Fixed
+
+- Ractor-related hang on Windows — fixed broken test skips and Ractor shutdown
 
 ## [0.1.1] - 2026-02-09
 
@@ -46,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Samples: calculator, concurrency demo, rube goldberg demo
 - API documentation site with search
 
-[Unreleased]: https://github.com/jamescook/teek/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/jamescook/teek/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/jamescook/teek/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jamescook/teek/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jamescook/teek/releases/tag/v0.1.0
