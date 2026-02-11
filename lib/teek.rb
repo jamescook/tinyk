@@ -415,6 +415,44 @@ module Teek
       @interp.tcl_eval("wm withdraw #{window}")
     end
 
+    # Enable the Tk debug console. The console starts hidden and can be
+    # toggled with the given keyboard shortcut (default: F12).
+    #
+    # The Tk console is a built-in interactive Tcl shell — useful for
+    # inspecting variables, running Tcl commands, and debugging widget
+    # layouts at runtime. It is available on macOS and Windows only;
+    # on Linux this method is a no-op (Linux has the real terminal).
+    #
+    # @param keybinding [String] Tk event to toggle the console
+    #   (default: "<F12>")
+    # @return [Boolean] true if the console was created, false if
+    #   unavailable on this platform
+    # @example
+    #   app = Teek::App.new
+    #   app.add_debug_console            # F12 toggles console
+    #   app.add_debug_console("<F11>")   # custom key
+    # @see https://www.tcl-lang.org/man/tcl8.6/TkCmd/console.htm console
+    def add_debug_console(keybinding = '<F12>')
+      @interp.create_console
+      @_console_visible = false
+
+      toggle = proc do |*|
+        if @_console_visible
+          tcl_eval('console hide')
+          @_console_visible = false
+        else
+          tcl_eval('console show')
+          @_console_visible = true
+        end
+      end
+
+      command(:bind, '.', keybinding, toggle)
+      true
+    rescue TclError => e
+      warn "Teek: debug console not available on this platform (#{e.message})"
+      false
+    end
+
     # Set a window's title.
     # @param title [String] new title
     # @param window [String] Tk window path

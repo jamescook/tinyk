@@ -336,6 +336,12 @@ interp_initialize(int argc, VALUE *argv, VALUE self)
         rb_raise(eTclError, "Tk_Init failed: %s", err);
     }
 
+    /* Hide the Tk console if it was auto-created during Tk_Init.
+     * On macOS/Windows, Tk may create a console window depending on
+     * how the process was launched. "catch" handles Linux where the
+     * console command does not exist. */
+    Tcl_Eval(tip->interp, "catch {console hide}");
+
     /* 7. Initialize Tk stubs - after Tk_Init */
     tk_version = Tk_InitStubs(tip->interp, TK_VERSION, 0);
     if (tk_version == NULL) {
