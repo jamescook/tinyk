@@ -17,7 +17,8 @@
 #define MAC_OSX_TK
 #endif
 #include "tkPlatDecls.h"
-/* Defined in libtkstub — just need extern declaration (already in header) */
+#elif defined(_WIN32) || defined(__CYGWIN__)
+#include "tkPlatDecls.h"
 #endif
 
 /* ---------------------------------------------------------
