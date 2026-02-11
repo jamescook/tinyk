@@ -54,6 +54,11 @@ jobs:
       run: bundle exec rake test TESTOPTS="-v"
       continue-on-error: true
 
+    - name: Run SDL2 tests
+      timeout-minutes: 5
+      run: bundle exec rake sdl2:test TESTOPTS="-v"
+      continue-on-error: true
+
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v4
