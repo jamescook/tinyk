@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## [0.1.1] - 2026-02-11
+
 ### Added
 
 - `Teek::SDL2::Gamepad` — Xbox-style controller input via SDL2's GameController API with polling, event callbacks, hot-plug, dead zone helper, and virtual gamepad for testing
@@ -15,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `Teek::SDL2::Music` — streaming music playback via SDL2_mixer (MP3, OGG, etc.) with play/pause/resume/stop and volume control
 - `Teek::SDL2.start_audio_capture` / `stop_audio_capture` — record mixed audio output to WAV
 - Gamepad viewer sample
+
+### Fixed
+
+- extconf.rb now detects UCRT vs MINGW64 Ruby and shows correct MSYS2 package names
 
 ## [0.1.0] - 2026-02-11
 
