@@ -6,6 +6,16 @@ All notable changes to teek-sdl2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- `Teek::SDL2::Gamepad` — Xbox-style controller input via SDL2's GameController API with polling, event callbacks, hot-plug, dead zone helper, and virtual gamepad for testing
+- `Teek::SDL2::Sound` — short sound effect playback via SDL2_mixer (WAV, OGG, etc.)
+- `Teek::SDL2::Music` — streaming music playback via SDL2_mixer (MP3, OGG, etc.) with play/pause/resume/stop and volume control
+- `Teek::SDL2.start_audio_capture` / `stop_audio_capture` — record mixed audio output to WAV
+- Gamepad viewer sample
+
 ## [0.1.0] - 2026-02-11
 
 Initial release.

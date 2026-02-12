@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `App#every(ms, on_error:)` — repeating timer with cancellation, drift tracking, and configurable error handling (`:raise`, `Proc`, or `nil`)
+- `App#after` now accepts `on_error:` keyword for one-shot timer error handling
+- `App#initialize` accepts `title:` keyword argument
+- `App#add_debug_console` — toggle the built-in Tk console with a keyboard shortcut (macOS/Windows)
+
 ## [0.1.2] - 2026-02-11
 
 ### Added
