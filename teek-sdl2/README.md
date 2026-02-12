@@ -33,6 +33,8 @@ app.mainloop
 - **Image loading** -- PNG, JPG, BMP, WebP, GIF, and more via SDL2_image
 - **Font** -- TrueType text rendering and measurement via SDL2_ttf
 - **Keyboard input** -- poll key state with `viewport.key_down?('space')`
+- **Audio** -- sound effects and music playback via SDL2_mixer, with WAV capture
+- **Gamepad** -- Xbox-style controller input with polling, events, and hot-plug
 
 ## Image Loading
 
@@ -83,23 +85,102 @@ viewport.key_down?('a')
 viewport.bind('KeyPress', :keysym) { |key| puts key }
 ```
 
+## Audio
+
+Sound effects and music playback via SDL2_mixer.
+
+```ruby
+# Short sound effects (can overlap)
+click = Teek::SDL2::Sound.new("click.wav")
+click.play
+click.play(volume: 64)   # half volume
+
+# Streaming music (one track at a time)
+music = Teek::SDL2::Music.new("background.mp3")
+music.play               # loops forever
+music.volume = 64
+music.pause
+music.resume
+music.stop
+```
+
+Audio capture is available for recording the mixed output to a WAV file:
+
+```ruby
+Teek::SDL2.start_audio_capture("/tmp/output.wav")
+# ... play sounds and music ...
+Teek::SDL2.stop_audio_capture
+```
+
+## Gamepad
+
+Xbox-style controller input via SDL2's GameController API. Works with Xbox, PlayStation, Switch Pro, and most modern controllers out of the box.
+
+```ruby
+Teek::SDL2::Gamepad.init_subsystem
+
+# Polling
+gp = Teek::SDL2::Gamepad.first
+if gp
+  puts gp.name
+  puts "A pressed: #{gp.button?(:a)}"
+  puts "Left stick X: #{gp.axis(:left_x)}"
+  gp.close
+end
+
+# Event-driven
+Teek::SDL2::Gamepad.on_button { |id, btn, pressed| puts "#{btn} #{pressed}" }
+Teek::SDL2::Gamepad.on_axis   { |id, axis, value| puts "#{axis}: #{value}" }
+Teek::SDL2::Gamepad.on_added  { |idx| puts "Connected" }
+Teek::SDL2::Gamepad.on_removed { |id| puts "Disconnected" }
+
+# In your game loop
+Teek::SDL2::Gamepad.poll_events
+```
+
+Buttons: `:a`, `:b`, `:x`, `:y`, `:back`, `:start`, `:guide`, `:dpad_up`, `:dpad_down`, `:dpad_left`, `:dpad_right`, `:left_shoulder`, `:right_shoulder`, `:left_stick`, `:right_stick`
+
+Axes: `:left_x`, `:left_y`, `:right_x`, `:right_y`, `:trigger_left`, `:trigger_right`
+
+```ruby
+# Dead zone helper
+Teek::SDL2::Gamepad.apply_dead_zone(gp.axis(:left_x))         # default threshold: 8000
+Teek::SDL2::Gamepad.apply_dead_zone(gp.axis(:left_x), 4000)   # custom threshold
+
+# Constants
+Teek::SDL2::Gamepad::AXIS_MIN      # => -32768
+Teek::SDL2::Gamepad::AXIS_MAX      # =>  32767
+Teek::SDL2::Gamepad::TRIGGER_MIN   # =>  0
+Teek::SDL2::Gamepad::TRIGGER_MAX   # =>  32767
+Teek::SDL2::Gamepad::DEAD_ZONE     # =>  8000
+
+# Virtual gamepad for testing without hardware
+idx = Teek::SDL2::Gamepad.attach_virtual
+gp = Teek::SDL2::Gamepad.open(idx)
+gp.set_virtual_button(:a, true)
+gp.set_virtual_axis(:left_x, 16000)
+Teek::SDL2::Gamepad.poll_events
+Teek::SDL2::Gamepad.detach_virtual
+```
+
 ## Requirements
 
 - [teek](https://github.com/jamescook/teek) >= 0.1.0
 - SDL2 development headers
 - SDL2_image development headers (for image loading)
 - SDL2_ttf development headers (for text rendering)
+- SDL2_mixer development headers (for audio)
 
 ### macOS
 
 ```sh
-brew install sdl2 sdl2_image sdl2_ttf
+brew install sdl2 sdl2_image sdl2_ttf sdl2_mixer
 ```
 
 ### Ubuntu/Debian
 
 ```sh
-apt-get install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+apt-get install libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
 ```
 
 ### Windows

@@ -117,6 +117,6 @@ unless pkg_config('SDL2_mixer') || have_library('SDL2_mixer', 'Mix_OpenAudio', '
   MSG
 end
 
-$srcs = ['teek_sdl2.c', 'sdl2surface.c', 'sdl2bridge.c', 'sdl2text.c', 'sdl2pixels.c', 'sdl2image.c', 'sdl2mixer.c']
+$srcs = ['teek_sdl2.c', 'sdl2surface.c', 'sdl2bridge.c', 'sdl2text.c', 'sdl2pixels.c', 'sdl2image.c', 'sdl2mixer.c', 'sdl2gamepad.c']
 
 create_makefile('teek_sdl2')
