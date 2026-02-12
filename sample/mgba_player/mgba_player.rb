@@ -34,11 +34,15 @@ class MGBAPlayer
   WIN_W  = GBA_W * SCALE
   WIN_H  = GBA_H * SCALE
 
-  # GBA audio: ~32768 Hz stereo int16
-  AUDIO_FREQ     = 32768
-  AUDIO_BUF_HIGH = 8000  # don't queue beyond this many samples
+  # GBA audio: mGBA outputs at 44100 Hz (stereo int16)
+  AUDIO_FREQ     = 44100
   GBA_FPS        = 59.7272
   FRAME_PERIOD   = 1.0 / GBA_FPS
+
+  # Dynamic rate control (Near/byuu algorithm adapted for frame timing)
+  # Keep audio buffer ~50% full by adjusting frame period ±0.5%.
+  AUDIO_BUF_CAPACITY = (AUDIO_FREQ / GBA_FPS * 6).to_i  # ~6 frames (~100ms)
+  MAX_DELTA          = 0.005
 
   # Keyboard → GBA button bitmask
   KEY_MAP = {
@@ -70,13 +74,14 @@ class MGBAPlayer
 
   def initialize(rom_path = nil)
     @app = Teek::App.new
+    @app.interp.thread_timer_ms = 1  # need fast event dispatch for emulation
     @app.show
     @app.set_window_title("mGBA Player")
     @app.set_window_geometry("#{WIN_W}x#{WIN_H}")
 
     build_menu
 
-    @viewport = Teek::SDL2::Viewport.new(@app, width: WIN_W, height: WIN_H)
+    @viewport = Teek::SDL2::Viewport.new(@app, width: WIN_W, height: WIN_H, vsync: false)
     @viewport.pack(fill: :both, expand: true)
 
     # Streaming texture at native GBA resolution
@@ -170,6 +175,7 @@ class MGBAPlayer
     @fps_count = 0
     @fps_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     @next_frame = @fps_time
+    @audio_samples_produced = 0
   end
 
   def tick
@@ -181,14 +187,13 @@ class MGBAPlayer
     now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     @next_frame ||= now
 
-    # Run as many frames as wall-clock says we owe (cap at 3 to avoid spiral)
+    # Run as many frames as wall-clock says we owe (cap at 4)
     frames = 0
-    while @next_frame <= now && frames < 3
-      # 1. Input — keyboard
+    while @next_frame <= now && frames < 4
+      # 1. Input
       kb_mask = 0
       KEY_MAP.each { |key, bit| kb_mask |= bit if @keys_held.include?(key) }
 
-      # 1b. Input — gamepad
       gp_mask = 0
       begin
         Teek::SDL2::Gamepad.poll_events
@@ -202,17 +207,20 @@ class MGBAPlayer
 
       @core.set_keys(kb_mask | gp_mask)
 
-      # 2. Emulate one frame (releases GVL)
+      # 2. Emulate one frame
       @core.run_frame
 
-      # 3. Audio — drain mGBA audio and queue to SDL stream
+      # 3. Audio — queue and apply dynamic rate control
       pcm = @core.audio_buffer
       unless pcm.empty?
-        queued = @stream.queued_samples
-        @stream.queue(pcm) if queued < AUDIO_BUF_HIGH
+        @audio_samples_produced += pcm.bytesize / 4
+        @stream.queue(pcm)
       end
 
-      @next_frame += FRAME_PERIOD
+      # Near/byuu: nudge frame period ±0.5% to keep audio buffer ~50% full
+      fill = (@stream.queued_samples.to_f / AUDIO_BUF_CAPACITY).clamp(0.0, 1.0)
+      ratio = (1.0 - MAX_DELTA) + 2.0 * fill * MAX_DELTA
+      @next_frame += FRAME_PERIOD * ratio
       frames += 1
     end
 
@@ -221,7 +229,7 @@ class MGBAPlayer
 
     return if frames == 0
 
-    # 4. Video — render only the last frame
+    # 4. Video — render last frame only
     pixels = @core.video_buffer_argb
     @texture.update(pixels)
     @viewport.render do |r|
@@ -234,7 +242,10 @@ class MGBAPlayer
     elapsed = now - @fps_time
     if elapsed >= 1.0
       fps = @fps_count / elapsed
-      @app.set_window_title("mGBA — #{@core.title}  #{fps.round(1)} fps")
+      actual_rate = (@audio_samples_produced / elapsed).round
+      buf_ms = (@stream.queued_samples * 1000.0 / AUDIO_FREQ).round
+      @app.set_window_title("mGBA — #{@core.title}  #{fps.round(1)} fps  rate:#{actual_rate}  buf:#{buf_ms}ms")
+      @audio_samples_produced = 0
       @fps_count = 0
       @fps_time = now
     end

@@ -1,4 +1,5 @@
 #include "teek_mgba.h"
+#include <mgba/core/config.h>
 #include <ruby/thread.h>
 #include <string.h>
 #include <stdlib.h>
@@ -11,6 +12,7 @@
 struct blip_t;
 int blip_samples_avail(const struct blip_t *);
 int blip_read_samples(struct blip_t *, short out[], int count, int stereo);
+void blip_set_rates(struct blip_t *, double clock_rate, double sample_rate);
 
 VALUE mTeek;
 VALUE mTeekMGBA;
@@ -169,6 +171,15 @@ mgba_core_initialize(VALUE self, VALUE rom_path)
 
     /* 8. Reset */
     core->reset(core);
+
+    /* 9. Set blip_buf output rate to 44100 Hz (must be after reset) */
+    {
+        double clock_rate = (double)core->frequency(core);
+        struct blip_t *left  = core->getAudioChannel(core, 0);
+        struct blip_t *right = core->getAudioChannel(core, 1);
+        blip_set_rates(left,  clock_rate, 44100.0);
+        blip_set_rates(right, clock_rate, 44100.0);
+    }
 
     mc->core = core;
     return self;

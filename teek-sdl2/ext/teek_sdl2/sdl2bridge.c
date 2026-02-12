@@ -9,18 +9,28 @@
  * --------------------------------------------------------- */
 
 /*
- * Teek::SDL2.create_renderer_from_handle(native_handle) -> Renderer
+ * Teek::SDL2.create_renderer_from_handle(native_handle, vsync=true) -> Renderer
  *
  * Creates an SDL2 window embedded in the native window identified by
  * native_handle (from Tk's 'winfo id'), then creates a GPU-accelerated
  * renderer on it.
  *
+ * When +vsync+ is true (the default), SDL_RENDERER_PRESENTVSYNC is set
+ * so SDL_RenderPresent blocks until the next display refresh. Pass false
+ * for applications that manage their own frame pacing (e.g. emulators
+ * syncing to an audio clock).
+ *
  * The Ruby Viewport class is responsible for getting the handle and
  * calling this. This C function just does the SDL2 work.
  */
 static VALUE
-bridge_create_renderer_from_handle(VALUE self, VALUE handle_val)
+bridge_create_renderer_from_handle(int argc, VALUE *argv, VALUE self)
 {
+    VALUE handle_val, vsync_val;
+    rb_scan_args(argc, argv, "11", &handle_val, &vsync_val);
+
+    int use_vsync = NIL_P(vsync_val) ? 1 : RTEST(vsync_val);
+
     ensure_sdl2_init();
 
     /*
@@ -40,8 +50,10 @@ bridge_create_renderer_from_handle(VALUE self, VALUE handle_val)
         rb_raise(rb_eRuntimeError, "SDL_CreateWindowFrom failed: %s", SDL_GetError());
     }
 
-    SDL_Renderer *sdl_ren = SDL_CreateRenderer(window, -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    Uint32 flags = SDL_RENDERER_ACCELERATED;
+    if (use_vsync) flags |= SDL_RENDERER_PRESENTVSYNC;
+
+    SDL_Renderer *sdl_ren = SDL_CreateRenderer(window, -1, flags);
     if (!sdl_ren) {
         /* Fall back to software if GPU not available */
         sdl_ren = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
@@ -135,7 +147,7 @@ void
 Init_sdl2bridge(VALUE mTeekSDL2)
 {
     rb_define_module_function(mTeekSDL2, "create_renderer_from_handle",
-                             bridge_create_renderer_from_handle, 1);
+                             bridge_create_renderer_from_handle, -1);
     rb_define_module_function(mTeekSDL2, "poll_events", bridge_poll_events, 0);
     rb_define_module_function(mTeekSDL2, "_event_check_fn_ptr", bridge_event_check_fn_ptr, 0);
     rb_define_module_function(mTeekSDL2, "sdl_quit", bridge_sdl_quit, 0);
