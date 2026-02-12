@@ -16,7 +16,7 @@
     <details class="method-source">
       <summary>View source <span class="source-chevron">&#9660;</span></summary>
       <div class="source-content">
-        <pre><code id="source-<%= method_anchor(method) %>" class="language-ruby"<%= " data-coverage=\"#{method_cov_lines}\"" if method_cov_lines %>><%= h method['source'] %></code></pre>
+        <pre><code id="source-<%= method_anchor(method) %>" class="language-<%= method['source_language'] || 'ruby' %>"<%= " data-coverage=\"#{method_cov_lines}\"" if method_cov_lines %>><%= h method['source'] %></code></pre>
         <div class="source-meta">
           <% if method_cov_lines %><button type="button" data-coverage-toggle data-target="source-<%= method_anchor(method) %>" data-bs-toggle="tooltip" data-bs-placement="right" data-bs-title="Toggle coverage highlighting" class="<%= 'invisible' if method_cov && method_cov >= 100 %>"><i class="bi bi-eye"></i></button><% end %>
           <span class="source-meta-right">

@@ -81,7 +81,23 @@ end
 
 def serialize_method(method, parent_object)
   source = method.source rescue nil
+  source = nil if source.to_s.empty?
   source_lines = source ? source.lines.count : nil
+  source_language = "ruby"
+  source_file = method.file
+  source_line = method.line
+
+  # If no Ruby source (e.g. @!method directive), look for C source
+  if source.nil?
+    c_src = find_c_source(method)
+    if c_src
+      source = c_src[:source]
+      source_lines = c_src[:lines]
+      source_file = c_src[:file]
+      source_line = c_src[:line]
+      source_language = "c"
+    end
+  end
 
   {
     name: method.name.to_s,
@@ -92,10 +108,11 @@ def serialize_method(method, parent_object)
     tags: serialize_tags(method.tags, parent_object),
     parameters: method.parameters.map { |p| { name: p[0].to_s, default: p[1] } },
     has_content: !method.docstring.empty? || method.tags.any?,
-    source_file: method.file,
-    source_line: method.line,
+    source_file: source_file,
+    source_line: source_line,
     source_lines: source_lines,
-    source: source
+    source: source,
+    source_language: source_language
   }
 end
 
@@ -308,4 +325,124 @@ end
 # Check if object has @api private tag
 def api_private?(object)
   object.tags.any? { |t| t.tag_name == "api" && t.text == "private" }
+end
+
+# ── C source extraction for @!method directives ──────────────────────────
+
+# Lazily build a map of Ruby method names → C function names from all .c files.
+# Returns { "ClassName" => { "method_name:scope" => { func:, file:, abs_file: } } }
+def c_source_map
+  @c_source_map ||= build_c_source_map
+end
+
+def build_c_source_map
+  map = {}
+
+  c_files = Dir.glob([
+    File.join(Dir.pwd, 'ext', '**', '*.c'),
+    File.join(Dir.pwd, 'teek-sdl2', 'ext', '**', '*.c')
+  ])
+
+  # First pass: build global C-variable → Ruby-name mapping across all files
+  # (e.g. mTeekSDL2 is defined in teek_sdl2.c but used in sdl2mixer.c)
+  vars = {}
+  c_files.each do |abs_file|
+    content = File.read(abs_file)
+    content.scan(/(\w+)\s*=\s*rb_define_(?:module|class)(?:_under)?\s*\([^"]*"(\w+)"/) do |var, name|
+      vars[var] = name
+    end
+  end
+
+  # Second pass: map rb_define_method calls to C functions
+  c_files.each do |abs_file|
+    content = File.read(abs_file)
+    rel_file = abs_file.sub("#{Dir.pwd}/", '')
+
+    # Instance methods: rb_define_method(cVar, "name", c_func, argc)
+    content.scan(/rb_define_method\s*\(\s*(\w+)\s*,\s*"([^"]+)"\s*,\s*(\w+)/) do |cvar, ruby_name, c_func|
+      class_name = vars[cvar] || cvar
+      map[class_name] ||= {}
+      map[class_name]["#{ruby_name}:instance"] = { func: c_func, file: rel_file, abs_file: abs_file }
+    end
+
+    # Singleton/module methods: rb_define_singleton_method or rb_define_module_function
+    content.scan(/rb_define_(?:singleton_method|module_function)\s*\(\s*(\w+)\s*,\s*"([^"]+)"\s*,\s*(\w+)/) do |cvar, ruby_name, c_func|
+      class_name = vars[cvar] || cvar
+      map[class_name] ||= {}
+      map[class_name]["#{ruby_name}:class"] = { func: c_func, file: rel_file, abs_file: abs_file }
+    end
+  end
+
+  map
+end
+
+# Look up C source for a YARD method object. Returns nil or
+# { source:, file:, line:, lines: }
+def find_c_source(method)
+  class_name = method.namespace.name.to_s
+  key = "#{method.name}:#{method.scope}"
+
+  entry = c_source_map.dig(class_name, key)
+  return nil unless entry
+
+  content = File.read(entry[:abs_file])
+  extract_c_function(content, entry[:func], entry[:file])
+end
+
+# Extract a C function body by name. The codebase style is:
+#   static VALUE
+#   func_name(VALUE self, ...)
+#   {
+#       ...
+#   }
+def extract_c_function(content, func_name, rel_file)
+  lines = content.lines
+
+  # Find the line where the function name starts at column 0
+  func_idx = nil
+  lines.each_with_index do |line, idx|
+    if line =~ /\A#{Regexp.escape(func_name)}\s*\(/
+      func_idx = idx
+      break
+    end
+  end
+  return nil unless func_idx
+
+  # Go backwards to capture the return type line (e.g. "static VALUE")
+  start_idx = func_idx
+  if func_idx > 0 && lines[func_idx - 1] =~ /\A\w/
+    start_idx = func_idx - 1
+  end
+
+  # Find the opening brace
+  brace_idx = nil
+  (func_idx..lines.length - 1).each do |idx|
+    if lines[idx].include?('{')
+      brace_idx = idx
+      break
+    end
+  end
+  return nil unless brace_idx
+
+  # Count braces to find the matching close
+  depth = 0
+  end_idx = nil
+  (brace_idx..lines.length - 1).each do |idx|
+    lines[idx].each_char do |c|
+      depth += 1 if c == '{'
+      depth -= 1 if c == '}'
+    end
+    if depth == 0
+      end_idx = idx
+      break
+    end
+  end
+  return nil unless end_idx
+
+  {
+    source: lines[start_idx..end_idx].join,
+    file: rel_file,
+    line: start_idx + 1, # 1-based
+    lines: end_idx - start_idx + 1
+  }
 end

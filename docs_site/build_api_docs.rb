@@ -229,6 +229,7 @@ has_children: true
     modules = 0
     classes = 0
     methods = 0
+    c_methods = 0
 
     json_files.each do |file|
       doc = JSON.parse(File.read(file))
@@ -237,8 +238,12 @@ has_children: true
       else
         classes += 1
       end
-      methods += (doc['class_methods']&.size || 0)
-      methods += (doc['instance_methods']&.size || 0)
+      %w[class_methods instance_methods].each do |scope|
+        (doc[scope] || []).each do |m|
+          methods += 1
+          c_methods += 1 if m['source_language'] == 'c'
+        end
+      end
     end
 
     require_relative '../lib/teek/version'
@@ -253,7 +258,7 @@ has_children: true
     HTML
     File.write(File.join(includes_dir, 'stats.html'), content.strip)
 
-    puts "Generated stats: v#{version}, #{modules} modules, #{classes} classes, #{methods} methods"
+    puts "Generated stats: v#{version}, #{modules} modules, #{classes} classes, #{methods} methods (#{c_methods} C-backed)"
   end
 
   def generate_namespace_stubs
