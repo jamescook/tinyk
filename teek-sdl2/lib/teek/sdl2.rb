@@ -32,6 +32,86 @@ module Teek
   # @see Texture
   # @see Font
   module SDL2
+    # @!group Audio (C-defined module functions)
+
+    # @!method self.open_audio
+    #   Explicitly initialize the audio mixer. Safe to call multiple times.
+    #   Called automatically by {Sound} and {Music} constructors.
+    #   @return [nil]
+
+    # @!method self.close_audio
+    #   Shut down the audio mixer and free resources.
+    #   @return [nil]
+
+    # @!method self.halt(channel)
+    #   Immediately stop playback on a channel.
+    #   @param channel [Integer] channel number (returned by {Sound#play})
+    #   @return [nil]
+
+    # @!method self.playing?(channel)
+    #   Whether the given channel is currently playing.
+    #   @param channel [Integer]
+    #   @return [Boolean]
+
+    # @!method self.channel_paused?(channel)
+    #   Whether the given channel is paused.
+    #   @param channel [Integer]
+    #   @return [Boolean]
+
+    # @!method self.pause_channel(channel)
+    #   Pause playback on a channel.
+    #   @param channel [Integer]
+    #   @return [nil]
+
+    # @!method self.resume_channel(channel)
+    #   Resume a paused channel.
+    #   @param channel [Integer]
+    #   @return [nil]
+
+    # @!method self.channel_volume(channel, vol = -1)
+    #   Set or query volume for a channel.
+    #   @param channel [Integer]
+    #   @param vol [Integer] 0–128, or -1 to query without changing
+    #   @return [Integer] current volume
+
+    # @!method self.fade_out_music(ms)
+    #   Gradually fade out the currently playing music.
+    #   @param ms [Integer] fade duration in milliseconds
+    #   @return [nil]
+
+    # @!method self.fade_out_channel(channel, ms)
+    #   Gradually fade out a channel.
+    #   @param channel [Integer]
+    #   @param ms [Integer] fade duration in milliseconds
+    #   @return [nil]
+
+    # @!method self.master_volume
+    #   Current master volume (requires SDL2_mixer >= 2.6).
+    #   @return [Integer] 0–128
+    #   @raise [NotImplementedError] if SDL2_mixer < 2.6
+
+    # @!method self.master_volume=(vol)
+    #   Set the master volume (requires SDL2_mixer >= 2.6).
+    #   @param vol [Integer] 0–128
+    #   @return [Integer] previous volume
+    #   @raise [NotImplementedError] if SDL2_mixer < 2.6
+
+    # @!method self.start_audio_capture(path)
+    #   Begin recording mixed audio output to a WAV file.
+    #   Everything that plays through the mixer (sounds, music) is captured.
+    #   @param path [String] output WAV file path
+    #   @return [nil]
+    #   @raise [RuntimeError] if capture is already in progress
+    #   @see .stop_audio_capture
+
+    # @!method self.stop_audio_capture
+    #   Stop recording and finalize the WAV file.
+    #   Safe to call even if no capture is in progress.
+    #   @return [nil]
+    #   @see .start_audio_capture
+
+    # @!endgroup
+
     @event_source = nil
 
     # Register SDL2 as a Tcl event source. Called automatically when the
