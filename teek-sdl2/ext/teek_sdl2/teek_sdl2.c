@@ -66,6 +66,9 @@ Init_teek_sdl2(void)
     /* Audio (SDL2_mixer) */
     Init_sdl2mixer(mTeekSDL2);
 
+    /* Audio streaming (raw SDL2 audio device) */
+    Init_sdl2audio(mTeekSDL2);
+
     /* Gamepad (SDL2 GameController) */
     Init_sdl2gamepad(mTeekSDL2);
 }

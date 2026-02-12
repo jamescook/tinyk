@@ -102,6 +102,27 @@ Two other control flow signals are available for advanced use:
 
 If a callback raises a Ruby exception, it becomes a Tcl error. The exception message is preserved and can be caught on the Tcl side with `catch`.
 
+## Menus
+
+Build a menu bar with standard `menu` widgets:
+
+```ruby
+app = Teek::App.new(title: 'My App')
+
+app.command(:menu, '.menubar')
+app.command('.', :configure, menu: '.menubar')
+
+app.command(:menu, '.menubar.file', tearoff: 0)
+app.command('.menubar', :add, :cascade, label: 'File', menu: '.menubar.file')
+app.command('.menubar.file', :add, :command,
+           label: 'Quit', command: proc { app.command(:destroy, '.') })
+
+app.show
+app.mainloop
+```
+
+> **macOS note:** On macOS, Tk always displays a menu bar. If you don't configure one, Tk shows a default menu with items like "Run Widget Demo" that are meant for the Tcl interpreter shell. Attach a custom menu bar (even an empty one) to suppress it. See the [TkDocs menu tutorial](https://tkdocs.com/tutorial/menus.html) for details.
+
 ## List operations
 
 Convert between Ruby arrays and Tcl list strings:

@@ -146,6 +146,7 @@ require_relative "sdl2/texture"
 require_relative "sdl2/font"
 require_relative "sdl2/sound"
 require_relative "sdl2/music"
+require_relative "sdl2/audio_stream"
 require_relative "sdl2/gamepad"
 
 # Tk bridge (embeds SDL2 surface into a Tk frame)
