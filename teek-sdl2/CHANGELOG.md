@@ -43,4 +43,6 @@ Initial release.
 - Screenshot-based visual regression testing via `assert_sdl2_screenshot`
 - SDL2 demo sample
 
+[Unreleased]: https://github.com/jamescook/teek/compare/teek-sdl2-v0.1.1...HEAD
+[0.1.1]: https://github.com/jamescook/teek/compare/teek-sdl2-v0.1.0...teek-sdl2-v0.1.1
 [0.1.0]: https://github.com/jamescook/teek/releases/tag/teek-sdl2-v0.1.0
