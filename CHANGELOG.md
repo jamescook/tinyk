@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.3] - 2026-02-11
+
 ### Added
 
 - `App#every(ms, on_error:)` — repeating timer with cancellation, drift tracking, and configurable error handling (`:raise`, `Proc`, or `nil`)
@@ -67,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Samples: calculator, concurrency demo, rube goldberg demo
 - API documentation site with search
 
-[Unreleased]: https://github.com/jamescook/teek/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/jamescook/teek/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/jamescook/teek/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jamescook/teek/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/jamescook/teek/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jamescook/teek/releases/tag/v0.1.0
