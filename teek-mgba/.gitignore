@@ -1,0 +1,7 @@
+vendor/
+*.bundle
+*.so
+*.o
+*.log
+*.dSYM
+tmp/

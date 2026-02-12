@@ -108,6 +108,7 @@ task yard: 'docs:yard'
 CLEAN.include('ext/teek/config_list')
 CLOBBER.include('tmp', 'lib/*.bundle', 'lib/*.so', 'ext/**/*.o', 'ext/**/*.bundle', 'ext/**/*.bundle.dSYM')
 CLOBBER.include('teek-sdl2/lib/*.bundle', 'teek-sdl2/lib/*.so', 'teek-sdl2/ext/**/*.o', 'teek-sdl2/ext/**/*.bundle')
+CLOBBER.include('teek-mgba/lib/*.bundle', 'teek-mgba/lib/*.so', 'teek-mgba/ext/**/*.o', 'teek-mgba/ext/**/*.bundle')
 
 # Clean coverage artifacts before test runs to prevent accumulation
 CLEAN.include('coverage/.resultset.json', 'coverage/results')
@@ -125,6 +126,12 @@ if Gem::Specification.find_all_by_name('rake-compiler').any?
     ext.name = 'teek_sdl2'
     ext.ext_dir = 'teek-sdl2/ext/teek_sdl2'
     ext.lib_dir = 'teek-sdl2/lib'
+  end
+
+  Rake::ExtensionTask.new do |ext|
+    ext.name = 'teek_mgba'
+    ext.ext_dir = 'teek-mgba/ext/teek_mgba'
+    ext.lib_dir = 'teek-mgba/lib'
   end
 end
 
@@ -229,6 +236,52 @@ namespace :sdl2 do
     t.verbose = true
   end
   task test: 'compile:teek_sdl2'
+end
+
+namespace :mgba do
+  desc "Compile teek-mgba C extension"
+  task compile: 'compile:teek_mgba'
+
+  desc "Download and build libmgba from source (for macOS / platforms without libmgba-dev)"
+  task :deps do
+    require 'fileutils'
+    require 'etc'
+
+    vendor_dir  = File.expand_path('teek-mgba/vendor')
+    mgba_src    = File.join(vendor_dir, 'mgba')
+    build_dir   = File.join(vendor_dir, 'build')
+    install_dir = File.join(vendor_dir, 'install')
+
+    unless File.directory?(mgba_src)
+      FileUtils.mkdir_p(vendor_dir)
+      sh "git clone --depth 1 --branch 0.10.3 https://github.com/mgba-emu/mgba.git #{mgba_src}"
+    end
+
+    FileUtils.mkdir_p(build_dir)
+    cmake_flags = %W[
+      -DBUILD_SHARED=OFF
+      -DBUILD_STATIC=ON
+      -DBUILD_QT=OFF
+      -DBUILD_SDL=OFF
+      -DBUILD_GL=OFF
+      -DBUILD_GLES2=OFF
+      -DBUILD_GLES3=OFF
+      -DBUILD_LIBRETRO=OFF
+      -DSKIP_FRONTEND=ON
+      -DUSE_SQLITE3=OFF
+      -DUSE_ELF=OFF
+      -DUSE_LZMA=OFF
+      -DUSE_EDITLINE=OFF
+      -DCMAKE_INSTALL_PREFIX=#{install_dir}
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    ].join(' ')
+
+    sh "cmake -S #{mgba_src} -B #{build_dir} #{cmake_flags}"
+    sh "cmake --build #{build_dir} -j #{Etc.nprocessors}"
+    sh "cmake --install #{build_dir}"
+
+    puts "libmgba built and installed to #{install_dir}"
+  end
 end
 
 task :default => :compile
