@@ -108,52 +108,17 @@ module Teek
         # Push loaded keyboard config into the settings UI
         @settings_window.refresh_gamepad(build_kb_labels, 0)
 
-        @viewport = Teek::SDL2::Viewport.new(@app, width: win_w, height: win_h, vsync: false)
-        @viewport.pack(fill: :both, expand: true)
-
-        # Status label overlaid on viewport (shown when no ROM loaded)
-        @status_label = '.status_overlay'
-        @app.command(:label, @status_label,
-          text: 'File > Open ROM...',
-          fg: '#888888', bg: '#000000',
-          font: '{TkDefaultFont} 11')
-        @app.command(:place, @status_label,
-          in: @viewport.frame.path,
-          relx: 0.5, rely: 0.85, anchor: :center)
-
-        # Streaming texture at native GBA resolution
-        @texture = @viewport.renderer.create_texture(GBA_W, GBA_H, :streaming)
-
-        # Audio stream — stereo int16 at GBA sample rate
-        @stream = Teek::SDL2::AudioStream.new(
-          frequency: AUDIO_FREQ,
-          format:    :s16,
-          channels:  2
-        )
-        @stream.resume
-
-        # Input state
+        # Input/emulation state (initialized before SDL2)
         @keys_held = Set.new
         @gamepad = nil
         @running = true
         @paused = false
         @core = nil
         @rom_path = nil
+        @initial_rom = rom_path
 
-        # Initialize gamepad subsystem for hot-plug detection
-        Teek::SDL2::Gamepad.init_subsystem
-        Teek::SDL2::Gamepad.on_added { |_| refresh_gamepads }
-        Teek::SDL2::Gamepad.on_removed { |_| @gamepad = nil; refresh_gamepads }
-        refresh_gamepads
-        start_gamepad_probe
-
-        setup_input
-
-        load_rom(rom_path) if rom_path
-
-        # Auto-focus viewport for keyboard input
-        @app.tcl_eval("focus -force #{@viewport.frame.path}")
-        @app.update
+        # Block interaction until SDL2 is ready
+        @app.command('tk', 'busy', '.')
       end
 
       # @return [Integer] current video scale multiplier
@@ -180,13 +145,67 @@ module Teek
       attr_reader :dead_zone
 
       def run
-        animate
+        @app.after(1) { init_sdl2 }
         @app.mainloop
       ensure
         cleanup
       end
 
       private
+
+      # Deferred SDL2 initialization — runs inside the event loop so the
+      # window is already painted and responsive. Without this, the heavy
+      # SDL2 C calls (renderer, audio device, gamepad IOKit) block the
+      # main thread before macOS has a chance to display the window,
+      # causing a brief spinning beach ball.
+      def init_sdl2
+        win_w = GBA_W * @scale
+        win_h = GBA_H * @scale
+
+        @viewport = Teek::SDL2::Viewport.new(@app, width: win_w, height: win_h, vsync: false)
+        @viewport.pack(fill: :both, expand: true)
+
+        # Status label overlaid on viewport (shown when no ROM loaded)
+        @status_label = '.status_overlay'
+        @app.command(:label, @status_label,
+          text: 'File > Open ROM...',
+          fg: '#888888', bg: '#000000',
+          font: '{TkDefaultFont} 11')
+        @app.command(:place, @status_label,
+          in: @viewport.frame.path,
+          relx: 0.5, rely: 0.85, anchor: :center)
+
+        # Streaming texture at native GBA resolution
+        @texture = @viewport.renderer.create_texture(GBA_W, GBA_H, :streaming)
+
+        # Audio stream — stereo int16 at GBA sample rate
+        @stream = Teek::SDL2::AudioStream.new(
+          frequency: AUDIO_FREQ,
+          format:    :s16,
+          channels:  2
+        )
+        @stream.resume
+
+        # Initialize gamepad subsystem for hot-plug detection
+        Teek::SDL2::Gamepad.init_subsystem
+        Teek::SDL2::Gamepad.on_added { |_| refresh_gamepads }
+        Teek::SDL2::Gamepad.on_removed { |_| @gamepad = nil; refresh_gamepads }
+        refresh_gamepads
+        start_gamepad_probe
+
+        setup_input
+
+        load_rom(@initial_rom) if @initial_rom
+
+        # Unblock interaction now that SDL2 is ready
+        @app.command('tk', 'busy', 'forget', '.')
+
+        # Auto-focus viewport for keyboard input
+        @app.tcl_eval("focus -force #{@viewport.frame.path}")
+        @app.update
+
+        animate
+      end
 
       def show_settings
         @was_paused_before_settings = @paused
