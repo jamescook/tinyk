@@ -19,8 +19,15 @@ def add_mgba_deps
 end
 
 def check_mgba
+  have_header('mgba/core/core.h') or return false
+  # Try with deps first (needed for static linking on macOS where
+  # -undefined dynamic_lookup hides missing symbols until runtime)
+  saved_libs = $libs.dup
   add_mgba_deps
-  have_header('mgba/core/core.h') && have_library('mgba')
+  return true if have_library('mgba')
+  # Fall back without deps (shared lib on Linux — deps baked into .so)
+  $libs = saved_libs
+  have_library('mgba')
 end
 
 def find_mgba
@@ -51,19 +58,22 @@ def find_mgba
     return true
   end
 
-  # 4. Homebrew / common prefix paths (macOS)
-  brew_and_system = [
+  # 4. Homebrew / common prefix paths (macOS) / system paths (Linux)
+  search_prefixes = [
     '/opt/homebrew',      # Apple Silicon
     '/usr/local',         # Intel Homebrew / manual builds
     '/usr'                # System
   ]
 
-  brew_and_system.each do |prefix|
+  # Debian/Ubuntu multiarch lib dirs (e.g. /usr/lib/aarch64-linux-gnu)
+  multiarch_dirs = Dir.glob('/usr/lib/*-linux-gnu').select { |d| File.directory?(d) }
+
+  search_prefixes.each do |prefix|
     inc = "#{prefix}/include"
-    lib = "#{prefix}/lib"
     if File.exist?("#{inc}/mgba/core/core.h")
       $INCFLAGS << " -I#{inc}"
-      $LDFLAGS << " -L#{lib}"
+      multiarch_dirs.each { |d| $LDFLAGS << " -L#{d}" unless $LDFLAGS.include?(d) }
+      $LDFLAGS << " -L#{prefix}/lib" unless $LDFLAGS.include?("#{prefix}/lib")
       if check_mgba
         return true
       end

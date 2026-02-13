@@ -242,6 +242,14 @@ namespace :mgba do
   desc "Compile teek-mgba C extension"
   task compile: 'compile:teek_mgba'
 
+  Rake::TestTask.new(:test) do |t|
+    t.libs << 'teek-mgba/test' << 'teek-mgba/lib' << 'teek-sdl2/lib'
+    t.test_files = FileList['teek-mgba/test/**/test_*.rb'] - FileList['teek-mgba/test/test_helper.rb']
+    t.ruby_opts << '-r test_helper'
+    t.verbose = true
+  end
+  task test: ['compile:teek_mgba', 'compile:teek_sdl2']
+
   desc "Download and build libmgba from source (for macOS / platforms without libmgba-dev)"
   task :deps do
     require 'fileutils'
@@ -459,7 +467,30 @@ namespace :docker do
       sh cmd
     end
 
-    desc "Run all tests (teek + teek-sdl2) with coverage and generate report"
+    desc "Run teek-mgba tests in Docker"
+    task mgba: :build do
+      tcl_version = tcl_version_from_env
+      ruby_version = ruby_version_from_env
+      image_name = docker_image_name(tcl_version, ruby_version)
+
+      require 'fileutils'
+      FileUtils.mkdir_p('coverage')
+
+      puts "Running teek-mgba tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
+      cmd = "docker run --rm --init"
+      cmd += " -v #{Dir.pwd}/coverage:/app/coverage"
+      cmd += " -e TCL_VERSION=#{tcl_version}"
+      if ENV['COVERAGE'] == '1'
+        cmd += " -e COVERAGE=1"
+        cmd += " -e COVERAGE_NAME=#{ENV['COVERAGE_NAME'] || 'mgba'}"
+      end
+      cmd += " #{image_name}"
+      cmd += " xvfb-run -a bundle exec rake mgba:test"
+
+      sh cmd
+    end
+
+    desc "Run all tests (teek + teek-sdl2 + teek-mgba) with coverage and generate report"
     task all: 'docker:build' do
       tcl_version = tcl_version_from_env
       ruby_version = ruby_version_from_env

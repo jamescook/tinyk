@@ -52,7 +52,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libsdl2-dev \
     libsdl2-ttf-dev \
     libsdl2-image-dev \
-    libsdl2-mixer-dev
+    libsdl2-mixer-dev \
+    libmgba-dev
 
 # Tcl/Tk dev packages for compilation
 ARG TCL_VERSION=9.0
@@ -95,6 +96,7 @@ COPY Rakefile ./
 COPY ext/ ext/
 COPY lib/ lib/
 COPY teek-sdl2/ teek-sdl2/
+COPY teek-mgba/ teek-mgba/
 
 # Compile the main extension (tcltklib)
 RUN MAKEFLAGS="-j$(nproc)" MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH) && \
@@ -114,6 +116,9 @@ RUN MAKEFLAGS="-j$(nproc)" MULTIARCH=$(dpkg-architecture -qDEB_HOST_MULTIARCH) &
 
 # Compile teek-sdl2 (uses pkg-config for SDL2)
 RUN MAKEFLAGS="-j$(nproc)" bundle exec rake compile:teek_sdl2
+
+# Compile teek-mgba (uses pkg-config for libmgba)
+RUN MAKEFLAGS="-j$(nproc)" bundle exec rake compile:teek_mgba
 
 #############################################
 # RUNTIME STAGE - slim image for running tests
@@ -156,7 +161,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libsdl2-2.0-0 \
     libsdl2-ttf-2.0-0 \
     libsdl2-image-2.0-0 \
-    libsdl2-mixer-2.0-0
+    libsdl2-mixer-2.0-0 \
+    libmgba0.10t64
 
 # Tcl/Tk version-specific packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -206,12 +212,17 @@ COPY --from=builder /app/*.gemspec /app/
 COPY --from=builder /app/teek-sdl2/lib /app/teek-sdl2/lib
 COPY --from=builder /app/teek-sdl2/ext /app/teek-sdl2/ext
 
+# teek-mgba: compiled .so + lib/test files
+COPY --from=builder /app/teek-mgba/lib /app/teek-mgba/lib
+COPY --from=builder /app/teek-mgba/ext /app/teek-mgba/ext
+
 # Copy tests, samples, and assets directly from context (not cached with compilation)
 # This allows test/sample changes without recompiling
 COPY test/ test/
 COPY sample/ sample/
 COPY teek-sdl2/test/ teek-sdl2/test/
 COPY teek-sdl2/assets/ teek-sdl2/assets/
+COPY teek-mgba/test/ teek-mgba/test/
 COPY screenshots/blessed/ screenshots/blessed/
 
 CMD ["xvfb-run", "-a", "bundle", "exec", "rake", "test"]

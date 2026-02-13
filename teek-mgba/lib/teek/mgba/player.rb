@@ -20,9 +20,7 @@ module Teek
 
       GBA_W  = 240
       GBA_H  = 160
-      SCALE  = 3
-      WIN_W  = GBA_W * SCALE
-      WIN_H  = GBA_H * SCALE
+      DEFAULT_SCALE = 3
 
       # GBA audio: mGBA outputs at 44100 Hz (stereo int16)
       AUDIO_FREQ     = 44100
@@ -66,12 +64,25 @@ module Teek
         @app = Teek::App.new
         @app.interp.thread_timer_ms = 1  # need fast event dispatch for emulation
         @app.show
+
+        @scale  = DEFAULT_SCALE
+        @volume = 1.0
+        @muted  = false
+
+        win_w = GBA_W * @scale
+        win_h = GBA_H * @scale
         @app.set_window_title("mGBA Player")
-        @app.set_window_geometry("#{WIN_W}x#{WIN_H}")
+        @app.set_window_geometry("#{win_w}x#{win_h}")
 
         build_menu
 
-        @viewport = Teek::SDL2::Viewport.new(@app, width: WIN_W, height: WIN_H, vsync: false)
+        @settings_window = SettingsWindow.new(@app, callbacks: {
+          on_scale_change:  method(:apply_scale),
+          on_volume_change: method(:apply_volume),
+          on_mute_change:   method(:apply_mute),
+        })
+
+        @viewport = Teek::SDL2::Viewport.new(@app, width: win_w, height: win_h, vsync: false)
         @viewport.pack(fill: :both, expand: true)
 
         # Streaming texture at native GBA resolution
@@ -102,6 +113,20 @@ module Teek
         @app.update
       end
 
+      # @return [Integer] current video scale multiplier
+      attr_reader :scale
+
+      # @return [Float] current audio volume (0.0-1.0)
+      attr_reader :volume
+
+      # @return [Boolean] whether audio is muted
+      def muted?
+        @muted
+      end
+
+      # @return [Teek::MGBA::SettingsWindow]
+      attr_reader :settings_window
+
       def run
         animate
         @app.mainloop
@@ -110,6 +135,21 @@ module Teek
       end
 
       private
+
+      def apply_scale(new_scale)
+        @scale = new_scale.clamp(1, 4)
+        w = GBA_W * @scale
+        h = GBA_H * @scale
+        @app.set_window_geometry("#{w}x#{h}")
+      end
+
+      def apply_volume(vol)
+        @volume = vol.to_f.clamp(0.0, 1.0)
+      end
+
+      def apply_mute(muted)
+        @muted = !!muted
+      end
 
       def setup_input
         @viewport.bind('KeyPress', :keysym) do |k|
@@ -144,10 +184,15 @@ module Teek
                      command: proc { open_rom_dialog })
         @app.command("#{menubar}.file", :add, :separator)
         @app.command("#{menubar}.file", :add, :command,
+                     label: 'Settings...', accelerator: 'Cmd+,',
+                     command: proc { @settings_window.show })
+        @app.command("#{menubar}.file", :add, :separator)
+        @app.command("#{menubar}.file", :add, :command,
                      label: 'Quit', accelerator: 'Cmd+Q',
                      command: proc { @running = false })
 
         @app.command(:bind, '.', '<Command-o>', proc { open_rom_dialog })
+        @app.command(:bind, '.', '<Command-comma>', proc { @settings_window.show })
 
         # Emulation menu
         @emu_menu = "#{menubar}.emu"
@@ -251,7 +296,13 @@ module Teek
           pcm = @core.audio_buffer
           unless pcm.empty?
             @audio_samples_produced += pcm.bytesize / 4
-            @stream.queue(pcm)
+            if @muted
+              # Drain blip buffer but don't queue — keeps emulation in sync
+            elsif @volume < 1.0
+              @stream.queue(apply_volume_to_pcm(pcm))
+            else
+              @stream.queue(pcm)
+            end
           end
 
           # Near/byuu: nudge frame period ±0.5% to keep audio buffer ~50% full
@@ -296,6 +347,14 @@ module Teek
         else
           @app.command(:destroy, '.')
         end
+      end
+
+      # Apply software volume to int16 stereo PCM data.
+      def apply_volume_to_pcm(pcm)
+        samples = pcm.unpack('s*')
+        gain = @volume
+        samples.map! { |s| (s * gain).round.clamp(-32768, 32767) }
+        samples.pack('s*')
       end
 
       def cleanup

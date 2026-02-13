@@ -130,6 +130,7 @@ mgba_core_initialize(VALUE self, VALUE rom_path)
     struct mgba_core *mc;
     TypedData_Get_Struct(self, struct mgba_core, &mgba_core_type, mc);
 
+    Check_Type(rom_path, T_STRING);
     const char *path = StringValueCStr(rom_path);
 
     /* 1. Detect platform from ROM */
@@ -177,6 +178,12 @@ mgba_core_initialize(VALUE self, VALUE rom_path)
         double clock_rate = (double)core->frequency(core);
         struct blip_t *left  = core->getAudioChannel(core, 0);
         struct blip_t *right = core->getAudioChannel(core, 1);
+        if (!left || !right) {
+            free(mc->video_buffer);
+            mc->video_buffer = NULL;
+            core->deinit(core);
+            rb_raise(rb_eRuntimeError, "mGBA audio channels not available");
+        }
         blip_set_rates(left,  clock_rate, 44100.0);
         blip_set_rates(right, clock_rate, 44100.0);
     }
@@ -259,6 +266,9 @@ mgba_core_audio_buffer(VALUE self)
 
     struct blip_t *left  = mc->core->getAudioChannel(mc->core, 0);
     struct blip_t *right = mc->core->getAudioChannel(mc->core, 1);
+    if (!left || !right) {
+        return rb_str_new(NULL, 0);
+    }
 
     int avail = blip_samples_avail(left);
     if (avail <= 0) {
