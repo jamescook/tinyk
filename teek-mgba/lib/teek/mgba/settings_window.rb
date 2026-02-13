@@ -4,8 +4,9 @@ module Teek
   module MGBA
     # Settings window for the mGBA Player.
     #
-    # Opens a Toplevel with a ttk::notebook containing Video and Audio tabs.
-    # Closing the window hides it (withdraw) rather than destroying it.
+    # Opens a Toplevel with a ttk::notebook containing Video, Audio, and
+    # Gamepad tabs. Closing the window hides it (withdraw) rather than
+    # destroying it.
     #
     # Widget paths and Tcl variable names are exposed as constants so tests
     # can interact with the UI the same way a user would (set variable,
@@ -19,24 +20,67 @@ module Teek
       VOLUME_SCALE = "#{NB}.audio.vol_row.vol_scale"
       MUTE_CHECK = "#{NB}.audio.mute_row.mute"
 
+      # Gamepad tab widget paths
+      GAMEPAD_TAB   = "#{NB}.gamepad"
+      GAMEPAD_COMBO = "#{GAMEPAD_TAB}.gp_row.gp_combo"
+      DEADZONE_SCALE = "#{GAMEPAD_TAB}.dz_row.dz_scale"
+      GP_RESET_BTN   = "#{GAMEPAD_TAB}.reset_btn"
+
+      # GBA button widget paths (for remapping)
+      GP_BTN_A      = "#{GAMEPAD_TAB}.buttons.right.btn_a"
+      GP_BTN_B      = "#{GAMEPAD_TAB}.buttons.right.btn_b"
+      GP_BTN_L      = "#{GAMEPAD_TAB}.buttons.shoulders.btn_l"
+      GP_BTN_R      = "#{GAMEPAD_TAB}.buttons.shoulders.btn_r"
+      GP_BTN_UP     = "#{GAMEPAD_TAB}.buttons.left.btn_up"
+      GP_BTN_DOWN   = "#{GAMEPAD_TAB}.buttons.left.btn_down"
+      GP_BTN_LEFT   = "#{GAMEPAD_TAB}.buttons.left.btn_left"
+      GP_BTN_RIGHT  = "#{GAMEPAD_TAB}.buttons.left.btn_right"
+      GP_BTN_START  = "#{GAMEPAD_TAB}.buttons.center.btn_start"
+      GP_BTN_SELECT = "#{GAMEPAD_TAB}.buttons.center.btn_select"
+
       # Tcl variable names
-      VAR_SCALE  = '::mgba_scale'
-      VAR_VOLUME = '::mgba_volume'
-      VAR_MUTE   = '::mgba_mute'
+      VAR_SCALE    = '::mgba_scale'
+      VAR_VOLUME   = '::mgba_volume'
+      VAR_MUTE     = '::mgba_mute'
+      VAR_GAMEPAD  = '::mgba_gamepad'
+      VAR_DEADZONE = '::mgba_deadzone'
+
+      # GBA button → widget path mapping
+      GBA_BUTTONS = {
+        a: GP_BTN_A, b: GP_BTN_B,
+        l: GP_BTN_L, r: GP_BTN_R,
+        up: GP_BTN_UP, down: GP_BTN_DOWN,
+        left: GP_BTN_LEFT, right: GP_BTN_RIGHT,
+        start: GP_BTN_START, select: GP_BTN_SELECT,
+      }.freeze
+
+      # Default GBA → SDL gamepad mappings (display names)
+      DEFAULT_GP_LABELS = {
+        a: 'a', b: 'b',
+        l: 'left_shoulder', r: 'right_shoulder',
+        up: 'dpad_up', down: 'dpad_down',
+        left: 'dpad_left', right: 'dpad_right',
+        start: 'start', select: 'back',
+      }.freeze
 
       # @param app [Teek::App]
-      # @param callbacks [Hash] :on_scale_change, :on_volume_change, :on_mute_change
+      # @param callbacks [Hash] :on_scale_change, :on_volume_change, :on_mute_change,
+      #   :on_gamepad_map_change, :on_deadzone_change
       def initialize(app, callbacks: {})
         @app = app
         @callbacks = callbacks
+        @listening_for = nil
+        @listen_timer = nil
+        @gp_labels = DEFAULT_GP_LABELS.dup
 
         app.command(:toplevel, TOP)
         app.command(:wm, 'title', TOP, 'Settings')
-        app.command(:wm, 'geometry', TOP, '300x200')
+        app.command(:wm, 'geometry', TOP, '700x360')
         app.command(:wm, 'resizable', TOP, 0, 0)
+        app.command(:wm, 'transient', TOP, '.')  # child of main window
 
         # Hide on close, don't destroy
-        close_proc = proc { |*| app.command(:wm, 'withdraw', TOP) }
+        close_proc = proc { |*| hide }
         app.command(:wm, 'protocol', TOP, 'WM_DELETE_WINDOW', close_proc)
 
         setup_ui
@@ -45,13 +89,29 @@ module Teek
         app.command(:wm, 'withdraw', TOP)
       end
 
+      # @return [Symbol, nil] the GBA button currently listening for remap, or nil
+      attr_reader :listening_for
+
       def show
         @app.command(:wm, 'deiconify', TOP)
         @app.command(:raise, TOP)
+        @app.command(:grab, :set, TOP)
+        @app.command(:focus, TOP)
       end
 
       def hide
+        @app.command(:grab, :release, TOP)
         @app.command(:wm, 'withdraw', TOP)
+        @callbacks[:on_close]&.call
+      end
+
+      def update_gamepad_list(names)
+        @app.command(GAMEPAD_COMBO, 'configure',
+          values: Teek.make_list(*names))
+        current = @app.get_variable(VAR_GAMEPAD)
+        unless names.include?(current)
+          @app.set_variable(VAR_GAMEPAD, names.first)
+        end
       end
 
       private
@@ -62,6 +122,7 @@ module Teek
 
         setup_video_tab
         setup_audio_tab
+        setup_gamepad_tab
       end
 
       def setup_video_tab
@@ -138,6 +199,178 @@ module Teek
             @callbacks[:on_mute_change]&.call(muted)
           })
         @app.command(:pack, MUTE_CHECK, side: :left)
+      end
+      def setup_gamepad_tab
+        frame = GAMEPAD_TAB
+        @app.command('ttk::frame', frame)
+        @app.command(NB, 'add', frame, text: 'Gamepad')
+
+        # Gamepad selector row
+        gp_row = "#{frame}.gp_row"
+        @app.command('ttk::frame', gp_row)
+        @app.command(:pack, gp_row, fill: :x, padx: 10, pady: [8, 4])
+
+        @app.command('ttk::label', "#{gp_row}.lbl", text: 'Gamepad:')
+        @app.command(:pack, "#{gp_row}.lbl", side: :left)
+
+        @app.set_variable(VAR_GAMEPAD, 'Keyboard Only')
+        @app.command('ttk::combobox', GAMEPAD_COMBO,
+          textvariable: VAR_GAMEPAD, state: :readonly, width: 20)
+        @app.command(:pack, GAMEPAD_COMBO, side: :left, padx: 4)
+        @app.command(GAMEPAD_COMBO, 'configure',
+          values: Teek.make_list('Keyboard Only'))
+
+        # GBA button layout
+        buttons_frame = "#{frame}.buttons"
+        @app.command('ttk::frame', buttons_frame)
+        @app.command(:pack, buttons_frame, fill: :both, expand: 1, padx: 10, pady: 4)
+
+        # Shoulders: L and R at top
+        shoulders = "#{buttons_frame}.shoulders"
+        @app.command('ttk::frame', shoulders)
+        @app.command(:pack, shoulders, fill: :x, pady: [0, 8])
+        make_gba_button(GP_BTN_L, shoulders, :l, side: :left)
+        make_gba_button(GP_BTN_R, shoulders, :r, side: :right)
+
+        # Middle: three columns — D-pad | Select/Start | A/B
+        mid = "#{buttons_frame}.mid"
+        @app.command('ttk::frame', mid)
+        @app.command(:pack, mid, fill: :both, expand: 1)
+
+        # D-pad (left column)
+        left = "#{buttons_frame}.left"
+        @app.command('ttk::frame', left)
+        @app.command(:pack, left, side: :left, padx: [0, 20])
+        dpad_top = "#{left}.top"
+        @app.command('ttk::frame', dpad_top)
+        @app.command(:pack, dpad_top)
+        make_gba_button(GP_BTN_UP, dpad_top, :up, side: :top)
+        dpad_mid = "#{left}.mid"
+        @app.command('ttk::frame', dpad_mid)
+        @app.command(:pack, dpad_mid)
+        make_gba_button(GP_BTN_LEFT, dpad_mid, :left, side: :left)
+        make_gba_button(GP_BTN_RIGHT, dpad_mid, :right, side: :left)
+        dpad_bot = "#{left}.bot"
+        @app.command('ttk::frame', dpad_bot)
+        @app.command(:pack, dpad_bot)
+        make_gba_button(GP_BTN_DOWN, dpad_bot, :down, side: :top)
+
+        # A/B (right column)
+        right = "#{buttons_frame}.right"
+        @app.command('ttk::frame', right)
+        @app.command(:pack, right, side: :right, padx: [20, 0], pady: [15, 0])
+        make_gba_button(GP_BTN_B, right, :b, side: :left)
+        make_gba_button(GP_BTN_A, right, :a, side: :left)
+
+        # Start/Select (center column)
+        center = "#{buttons_frame}.center"
+        @app.command('ttk::frame', center)
+        @app.command(:pack, center, side: :left, expand: 1, pady: [30, 0])
+        make_gba_button(GP_BTN_SELECT, center, :select, side: :left)
+        make_gba_button(GP_BTN_START, center, :start, side: :left)
+
+        # Reset to defaults button
+        @app.command('ttk::button', GP_RESET_BTN, text: 'Reset to Defaults',
+          command: proc { confirm_reset_gamepad })
+        @app.command(:pack, GP_RESET_BTN, side: :bottom, pady: [4, 8])
+
+        # Dead zone slider
+        dz_row = "#{frame}.dz_row"
+        @app.command('ttk::frame', dz_row)
+        @app.command(:pack, dz_row, fill: :x, padx: 10, pady: [4, 8], side: :bottom)
+
+        @app.command('ttk::label', "#{dz_row}.lbl", text: 'Dead zone:')
+        @app.command(:pack, "#{dz_row}.lbl", side: :left)
+
+        @dz_val_label = "#{dz_row}.dz_label"
+        @app.command('ttk::label', @dz_val_label, text: '25%', width: 5)
+        @app.command(:pack, @dz_val_label, side: :right)
+
+        @app.set_variable(VAR_DEADZONE, '25')
+        @app.command('ttk::scale', DEADZONE_SCALE,
+          orient: :horizontal, from: 0, to: 50, length: 150,
+          variable: VAR_DEADZONE,
+          command: proc { |v, *|
+            pct = v.to_f.round
+            @app.command(@dz_val_label, 'configure', text: "#{pct}%")
+            threshold = (pct / 100.0 * 32767).round
+            @callbacks[:on_deadzone_change]&.call(threshold)
+          })
+        @app.command(:pack, DEADZONE_SCALE, side: :right, padx: [5, 5])
+      end
+
+      def make_gba_button(path, parent, gba_btn, side: :left)
+        label = btn_display(gba_btn)
+        @app.command('ttk::button', path, text: label, width: 16,
+          command: proc { start_listening(gba_btn) })
+        @app.command(:pack, path, side: side, padx: 2, pady: 2)
+      end
+
+      def btn_display(gba_btn)
+        gp = @gp_labels[gba_btn] || '?'
+        "#{gba_btn.upcase}: #{gp}"
+      end
+
+      def confirm_reset_gamepad
+        cancel_listening
+        result = @app.command('tk_messageBox',
+          parent: TOP,
+          title: 'Reset Gamepad',
+          message: 'Reset all gamepad mappings and dead zone to defaults?',
+          type: :yesno,
+          icon: :question)
+        reset_gamepad_defaults if result == 'yes'
+      end
+
+      def reset_gamepad_defaults
+        @gp_labels = DEFAULT_GP_LABELS.dup
+        GBA_BUTTONS.each do |gba_btn, widget|
+          @app.command(widget, 'configure', text: btn_display(gba_btn))
+        end
+        @app.command(DEADZONE_SCALE, 'set', 25)
+        @callbacks[:on_gamepad_reset]&.call
+      end
+
+      LISTEN_TIMEOUT_MS = 10_000
+
+      def start_listening(gba_btn)
+        cancel_listening
+        @listening_for = gba_btn
+        widget = GBA_BUTTONS[gba_btn]
+        @app.command(widget, 'configure', text: "#{gba_btn.upcase}: Press...")
+        @listen_timer = @app.after(LISTEN_TIMEOUT_MS) { cancel_listening }
+      end
+
+      def cancel_listening
+        if @listen_timer
+          @app.command(:after, :cancel, @listen_timer)
+          @listen_timer = nil
+        end
+        if @listening_for
+          widget = GBA_BUTTONS[@listening_for]
+          @app.command(widget, 'configure', text: btn_display(@listening_for))
+          @listening_for = nil
+        end
+      end
+
+      # Called by the player's poll loop when a gamepad button is detected
+      # during listen mode.
+      public
+
+      def capture_mapping(gamepad_button)
+        return unless @listening_for
+
+        if @listen_timer
+          @app.command(:after, :cancel, @listen_timer)
+          @listen_timer = nil
+        end
+
+        gba_btn = @listening_for
+        @gp_labels[gba_btn] = gamepad_button.to_s
+        widget = GBA_BUTTONS[gba_btn]
+        @app.command(widget, 'configure', text: btn_display(gba_btn))
+        @listening_for = nil
+        @callbacks[:on_gamepad_map_change]&.call(gba_btn, gamepad_button)
       end
     end
   end

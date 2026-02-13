@@ -33,6 +33,15 @@ ensure_gc_init(void)
     if (gc_subsystem_initialized) return;
 
     if (!(SDL_WasInit(SDL_INIT_GAMECONTROLLER) & SDL_INIT_GAMECONTROLLER)) {
+        /*
+         * By default SDL drops joystick/gamecontroller events when its
+         * window doesn't have focus. Since we embed SDL inside Tk, other
+         * Tk windows (e.g. Settings) can take focus while the user still
+         * needs gamepad input. Allow events regardless of focus.
+         * https://wiki.libsdl.org/SDL2/SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS
+         */
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+
         if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) < 0) {
             rb_raise(rb_eRuntimeError,
                      "SDL_InitSubSystem(GAMECONTROLLER) failed: %s",
@@ -544,6 +553,30 @@ gamepad_s_poll_events(VALUE klass)
     return INT2NUM(count);
 }
 
+/*
+ * Gamepad.update_state -> nil
+ *
+ * Refreshes the internal state of all open game controllers
+ * WITHOUT pumping the platform event loop.
+ *
+ * SDL_PollEvent → SDL_PumpEvents → pumps the Cocoa run loop on macOS,
+ * which steals events from other UI toolkits (e.g. Tk).
+ * SDL_GameControllerUpdate → SDL_JoystickUpdate only (no event pump).
+ * See: https://github.com/libsdl-org/SDL/blob/SDL2/src/joystick/SDL_gamecontroller.c
+ *
+ * After calling this, Gamepad#button? and Gamepad#axis return
+ * updated values. Use this instead of poll_events when you only
+ * need fresh controller state and don't need event callbacks.
+ */
+static VALUE
+gamepad_s_update_state(VALUE klass)
+{
+    if (gc_subsystem_initialized) {
+        SDL_GameControllerUpdate();
+    }
+    return Qnil;
+}
+
 /* ---------------------------------------------------------
  * Callback registration
  * --------------------------------------------------------- */
@@ -838,6 +871,8 @@ Init_sdl2gamepad(VALUE mTeekSDL2)
     rb_define_singleton_method(cGamepad, "all", gamepad_s_all, 0);
     rb_define_singleton_method(cGamepad, "poll_events",
                                gamepad_s_poll_events, 0);
+    rb_define_singleton_method(cGamepad, "update_state",
+                               gamepad_s_update_state, 0);
     rb_define_singleton_method(cGamepad, "buttons", gamepad_s_buttons, 0);
     rb_define_singleton_method(cGamepad, "axes", gamepad_s_axes, 0);
 

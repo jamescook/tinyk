@@ -46,19 +46,29 @@ module Teek
         's'         => KEY_R,
       }.freeze
 
-      # SDL gamepad → GBA button bitmask
-      GAMEPAD_MAP = {
-        a:             KEY_A,
-        b:             KEY_B,
-        back:          KEY_SELECT,
-        start:         KEY_START,
-        dpup:          KEY_UP,
-        dpdown:        KEY_DOWN,
-        dpleft:        KEY_LEFT,
-        dpright:       KEY_RIGHT,
-        leftshoulder:  KEY_L,
-        rightshoulder: KEY_R,
+      # Default SDL gamepad → GBA button bitmask
+      DEFAULT_GAMEPAD_MAP = {
+        a:              KEY_A,
+        b:              KEY_B,
+        back:           KEY_SELECT,
+        start:          KEY_START,
+        dpad_up:        KEY_UP,
+        dpad_down:      KEY_DOWN,
+        dpad_left:      KEY_LEFT,
+        dpad_right:     KEY_RIGHT,
+        left_shoulder:  KEY_L,
+        right_shoulder: KEY_R,
       }.freeze
+
+      # GBA button label → bitmask (for remapping)
+      GBA_BTN_BITS = {
+        a: KEY_A, b: KEY_B,
+        l: KEY_L, r: KEY_R,
+        up: KEY_UP, down: KEY_DOWN,
+        left: KEY_LEFT, right: KEY_RIGHT,
+        start: KEY_START, select: KEY_SELECT,
+      }.freeze
+
 
       def initialize(rom_path = nil)
         @app = Teek::App.new
@@ -68,6 +78,8 @@ module Teek
         @scale  = DEFAULT_SCALE
         @volume = 1.0
         @muted  = false
+        @gamepad_map = DEFAULT_GAMEPAD_MAP.dup
+        @dead_zone = Teek::SDL2::Gamepad::DEAD_ZONE
 
         win_w = GBA_W * @scale
         win_h = GBA_H * @scale
@@ -77,13 +89,27 @@ module Teek
         build_menu
 
         @settings_window = SettingsWindow.new(@app, callbacks: {
-          on_scale_change:  method(:apply_scale),
-          on_volume_change: method(:apply_volume),
-          on_mute_change:   method(:apply_mute),
+          on_scale_change:      method(:apply_scale),
+          on_volume_change:     method(:apply_volume),
+          on_mute_change:       method(:apply_mute),
+          on_gamepad_map_change: method(:apply_gamepad_mapping),
+          on_deadzone_change:   method(:apply_deadzone),
+          on_gamepad_reset:     method(:apply_gamepad_reset),
+          on_close:             method(:on_settings_close),
         })
 
         @viewport = Teek::SDL2::Viewport.new(@app, width: win_w, height: win_h, vsync: false)
         @viewport.pack(fill: :both, expand: true)
+
+        # Status label overlaid on viewport (shown when no ROM loaded)
+        @status_label = '.status_overlay'
+        @app.command(:label, @status_label,
+          text: 'File > Open ROM...',
+          fg: '#888888', bg: '#000000',
+          font: '{TkDefaultFont} 11')
+        @app.command(:place, @status_label,
+          in: @viewport.frame.path,
+          relx: 0.5, rely: 0.85, anchor: :center)
 
         # Streaming texture at native GBA resolution
         @texture = @viewport.renderer.create_texture(GBA_W, GBA_H, :streaming)
@@ -103,6 +129,13 @@ module Teek
         @paused = false
         @core = nil
         @rom_path = nil
+
+        # Initialize gamepad subsystem for hot-plug detection
+        Teek::SDL2::Gamepad.init_subsystem
+        Teek::SDL2::Gamepad.on_added { |_| refresh_gamepads }
+        Teek::SDL2::Gamepad.on_removed { |_| @gamepad = nil; refresh_gamepads }
+        refresh_gamepads
+        start_gamepad_probe
 
         setup_input
 
@@ -127,6 +160,12 @@ module Teek
       # @return [Teek::MGBA::SettingsWindow]
       attr_reader :settings_window
 
+      # @return [Hash] current gamepad → GBA button mapping
+      attr_reader :gamepad_map
+
+      # @return [Integer] current analog stick dead zone threshold
+      attr_reader :dead_zone
+
       def run
         animate
         @app.mainloop
@@ -135,6 +174,16 @@ module Teek
       end
 
       private
+
+      def show_settings
+        @was_paused_before_settings = @paused
+        toggle_pause if @core && !@paused
+        @settings_window.show
+      end
+
+      def on_settings_close
+        toggle_pause if @core && !@was_paused_before_settings
+      end
 
       def apply_scale(new_scale)
         @scale = new_scale.clamp(1, 4)
@@ -149,6 +198,82 @@ module Teek
 
       def apply_mute(muted)
         @muted = !!muted
+      end
+
+      def apply_gamepad_mapping(gba_btn, gp_btn)
+        bit = GBA_BTN_BITS[gba_btn] or return
+        @gamepad_map.delete_if { |_, v| v == bit }
+        @gamepad_map[gp_btn] = bit
+      end
+
+      def apply_deadzone(threshold)
+        @dead_zone = threshold.to_i
+      end
+
+      def apply_gamepad_reset
+        @gamepad_map = DEFAULT_GAMEPAD_MAP.dup
+        @dead_zone = Teek::SDL2::Gamepad::DEAD_ZONE
+      end
+
+      GAMEPAD_PROBE_MS  = 2000
+      GAMEPAD_LISTEN_MS = 50
+
+      def start_gamepad_probe
+        @app.after(GAMEPAD_PROBE_MS) { gamepad_probe_tick }
+      end
+
+      def gamepad_probe_tick
+        return unless @running
+        has_gp = @gamepad && !@gamepad.closed?
+        settings_visible = @app.command(:wm, 'state', SettingsWindow::TOP) != 'withdrawn' rescue false
+
+        # When settings is visible, use update_state (SDL_GameControllerUpdate)
+        # instead of poll_events (SDL_PollEvent) to avoid pumping the Cocoa
+        # run loop, which steals events from Tk's native widgets.
+        # Background events hint ensures update_state gets fresh data even
+        # when the SDL window doesn't have focus.
+        if settings_visible && has_gp
+          Teek::SDL2::Gamepad.update_state
+
+          # Listen mode: capture first pressed button for remap
+          if @settings_window.listening_for
+            Teek::SDL2::Gamepad.buttons.each do |btn|
+              if @gamepad.button?(btn)
+                @settings_window.capture_mapping(btn)
+                break
+              end
+            end
+          end
+
+          @app.after(GAMEPAD_LISTEN_MS) { gamepad_probe_tick }
+          return
+        end
+
+        # Settings closed: use poll_events for hot-plug callbacks
+        unless @core
+          Teek::SDL2::Gamepad.poll_events rescue nil
+        end
+        @app.after(GAMEPAD_PROBE_MS) { gamepad_probe_tick }
+      end
+
+      def refresh_gamepads
+        names = ['Keyboard Only']
+        8.times do |i|
+          gp = begin; Teek::SDL2::Gamepad.open(i); rescue; nil; end
+          next unless gp
+          names << gp.name
+          @gamepad ||= gp
+          gp.close unless gp == @gamepad
+        end
+        @settings_window&.update_gamepad_list(names)
+        update_status_label
+      end
+
+      def update_status_label
+        return if @core # hidden during gameplay
+        gp_text = @gamepad ? @gamepad.name : 'No gamepad detected'
+        @app.command(@status_label, :configure,
+          text: "File > Open ROM...\n#{gp_text}")
       end
 
       def setup_input
@@ -185,14 +310,14 @@ module Teek
         @app.command("#{menubar}.file", :add, :separator)
         @app.command("#{menubar}.file", :add, :command,
                      label: 'Settings...', accelerator: 'Cmd+,',
-                     command: proc { @settings_window.show })
+                     command: proc { show_settings })
         @app.command("#{menubar}.file", :add, :separator)
         @app.command("#{menubar}.file", :add, :command,
                      label: 'Quit', accelerator: 'Cmd+Q',
                      command: proc { @running = false })
 
         @app.command(:bind, '.', '<Command-o>', proc { open_rom_dialog })
-        @app.command(:bind, '.', '<Command-comma>', proc { @settings_window.show })
+        @app.command(:bind, '.', '<Command-comma>', proc { show_settings })
 
         # Emulation menu
         @emu_menu = "#{menubar}.emu"
@@ -245,6 +370,7 @@ module Teek
         @rom_path = path
         @paused = false
         @stream.resume
+        @app.command(:place, :forget, @status_label) rescue nil
         @app.set_window_title("mGBA — #{@core.title}")
         @fps_count = 0
         @fps_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -279,9 +405,9 @@ module Teek
           gp_mask = 0
           begin
             Teek::SDL2::Gamepad.poll_events
-            @gamepad ||= Teek::SDL2::Gamepad.gamepads.first
+            @gamepad ||= Teek::SDL2::Gamepad.first
             if @gamepad && !@gamepad.closed?
-              GAMEPAD_MAP.each { |btn, bit| gp_mask |= bit if @gamepad.button?(btn) }
+              @gamepad_map.each { |btn, bit| gp_mask |= bit if @gamepad.button?(btn) }
             end
           rescue StandardError
             @gamepad = nil
@@ -342,7 +468,7 @@ module Teek
       def animate
         tick
         if @running
-          delay = @core ? 1 : 100
+          delay = (@core && !@paused) ? 1 : 100
           @app.after(delay) { animate }
         else
           @app.command(:destroy, '.')
