@@ -497,10 +497,24 @@ module Teek
         load_rom(@rom_path)
       end
 
+      def confirm_rom_change(new_path)
+        return true unless @core && !@core.destroyed?
+
+        name = File.basename(new_path)
+        result = @app.command('tk_messageBox',
+          parent: '.',
+          title: 'Game Running',
+          message: "Another game is running. Switch to #{name}?",
+          type: :okcancel,
+          icon: :warning)
+        result == 'ok'
+      end
+
       def open_rom_dialog
         filetypes = '{{GBA ROMs} {.gba}} {{GB ROMs} {.gb .gbc}} {{All Files} {*}}'
         path = @app.tcl_eval("tk_getOpenFile -title {Open ROM} -filetypes {#{filetypes}}")
         return if path.empty?
+        return unless confirm_rom_change(path)
 
         load_rom(path)
       end
@@ -540,6 +554,8 @@ module Teek
           rebuild_recent_menu
           return
         end
+        return unless confirm_rom_change(path)
+
         load_rom(path)
       end
 
