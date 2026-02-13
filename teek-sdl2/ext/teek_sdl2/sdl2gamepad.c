@@ -350,6 +350,24 @@ gamepad_name(VALUE self)
 }
 
 /*
+ * Gamepad#guid -> String
+ *
+ * Returns the GUID string that identifies this controller's model/type.
+ * Same model controllers share the same GUID. Useful as a config key
+ * for persisting per-controller settings.
+ */
+static VALUE
+gamepad_guid(VALUE self)
+{
+    struct sdl2_gamepad *gp = get_gamepad(self);
+    SDL_Joystick *joy = SDL_GameControllerGetJoystick(gp->controller);
+    SDL_JoystickGUID guid = SDL_JoystickGetGUID(joy);
+    char buf[33];
+    SDL_JoystickGetGUIDString(guid, buf, sizeof(buf));
+    return rb_str_new_cstr(buf);
+}
+
+/*
  * Gamepad#attached? -> true or false
  *
  * Returns true if the controller is still physically connected.
@@ -892,6 +910,7 @@ Init_sdl2gamepad(VALUE mTeekSDL2)
 
     /* Instance methods */
     rb_define_method(cGamepad, "name", gamepad_name, 0);
+    rb_define_method(cGamepad, "guid", gamepad_guid, 0);
     rb_define_method(cGamepad, "attached?", gamepad_attached_p, 0);
     rb_define_method(cGamepad, "button?", gamepad_button_p, 1);
     rb_define_method(cGamepad, "axis", gamepad_axis, 1);

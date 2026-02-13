@@ -24,7 +24,8 @@ module Teek
       GAMEPAD_TAB   = "#{NB}.gamepad"
       GAMEPAD_COMBO = "#{GAMEPAD_TAB}.gp_row.gp_combo"
       DEADZONE_SCALE = "#{GAMEPAD_TAB}.dz_row.dz_scale"
-      GP_RESET_BTN   = "#{GAMEPAD_TAB}.reset_btn"
+      GP_RESET_BTN   = "#{GAMEPAD_TAB}.btn_bar.reset_btn"
+      GP_UNDO_BTN    = "#{GAMEPAD_TAB}.btn_bar.undo_btn"
 
       # GBA button widget paths (for remapping)
       GP_BTN_A      = "#{GAMEPAD_TAB}.buttons.right.btn_a"
@@ -37,6 +38,9 @@ module Teek
       GP_BTN_RIGHT  = "#{GAMEPAD_TAB}.buttons.left.btn_right"
       GP_BTN_START  = "#{GAMEPAD_TAB}.buttons.center.btn_start"
       GP_BTN_SELECT = "#{GAMEPAD_TAB}.buttons.center.btn_select"
+
+      # Bottom bar
+      SAVE_BTN = "#{TOP}.save_btn"
 
       # Tcl variable names
       VAR_SCALE    = '::mgba_scale'
@@ -63,6 +67,15 @@ module Teek
         start: 'start', select: 'back',
       }.freeze
 
+      # Default GBA → Tk keysym mappings (keyboard mode display names)
+      DEFAULT_KB_LABELS = {
+        a: 'z', b: 'x',
+        l: 'a', r: 's',
+        up: 'Up', down: 'Down',
+        left: 'Left', right: 'Right',
+        start: 'Return', select: 'BackSpace',
+      }.freeze
+
       # @param app [Teek::App]
       # @param callbacks [Hash] :on_scale_change, :on_volume_change, :on_mute_change,
       #   :on_gamepad_map_change, :on_deadzone_change
@@ -71,7 +84,8 @@ module Teek
         @callbacks = callbacks
         @listening_for = nil
         @listen_timer = nil
-        @gp_labels = DEFAULT_GP_LABELS.dup
+        @keyboard_mode = true
+        @gp_labels = DEFAULT_KB_LABELS.dup
 
         app.command(:toplevel, TOP)
         app.command(:wm, 'title', TOP, 'Settings')
@@ -91,6 +105,11 @@ module Teek
 
       # @return [Symbol, nil] the GBA button currently listening for remap, or nil
       attr_reader :listening_for
+
+      # @return [Boolean] true when editing keyboard bindings, false for gamepad
+      def keyboard_mode?
+        @keyboard_mode
+      end
 
       def show
         @app.command(:wm, 'deiconify', TOP)
@@ -114,15 +133,30 @@ module Teek
         end
       end
 
+      # Enable the Save button (called when any setting changes)
+      def mark_dirty
+        @app.command(SAVE_BTN, 'configure', state: :normal)
+      end
+
       private
+
+      def do_save
+        @callbacks[:on_save]&.call
+        @app.command(SAVE_BTN, 'configure', state: :disabled)
+      end
 
       def setup_ui
         @app.command('ttk::notebook', NB)
-        @app.command(:pack, NB, fill: :both, expand: 1, padx: 5, pady: 5)
+        @app.command(:pack, NB, fill: :both, expand: 1, padx: 5, pady: [5, 0])
 
         setup_video_tab
         setup_audio_tab
         setup_gamepad_tab
+
+        # Save button — disabled until a setting changes
+        @app.command('ttk::button', SAVE_BTN, text: 'Save', state: :disabled,
+          command: proc { do_save })
+        @app.command(:pack, SAVE_BTN, side: :bottom, pady: [0, 8])
       end
 
       def setup_video_tab
@@ -150,7 +184,10 @@ module Teek
           proc { |*|
             val = @app.get_variable(VAR_SCALE)
             scale = val.to_i
-            @callbacks[:on_scale_change]&.call(scale) if scale > 0
+            if scale > 0
+              @callbacks[:on_scale_change]&.call(scale)
+              mark_dirty
+            end
           })
       end
 
@@ -182,6 +219,7 @@ module Teek
             pct = v.to_f.round
             @app.command(@vol_val_label, 'configure', text: "#{pct}%")
             @callbacks[:on_volume_change]&.call(pct / 100.0)
+            mark_dirty
           })
         @app.command(:pack, VOLUME_SCALE, side: :right, padx: [5, 5])
 
@@ -197,6 +235,7 @@ module Teek
           command: proc { |*|
             muted = @app.get_variable(VAR_MUTE) == '1'
             @callbacks[:on_mute_change]&.call(muted)
+            mark_dirty
           })
         @app.command(:pack, MUTE_CHECK, side: :left)
       end
@@ -219,6 +258,9 @@ module Teek
         @app.command(:pack, GAMEPAD_COMBO, side: :left, padx: 4)
         @app.command(GAMEPAD_COMBO, 'configure',
           values: Teek.make_list('Keyboard Only'))
+
+        @app.command(:bind, GAMEPAD_COMBO, '<<ComboboxSelected>>',
+          proc { |*| switch_input_mode })
 
         # GBA button layout
         buttons_frame = "#{frame}.buttons"
@@ -269,12 +311,20 @@ module Teek
         make_gba_button(GP_BTN_SELECT, center, :select, side: :left)
         make_gba_button(GP_BTN_START, center, :start, side: :left)
 
-        # Reset to defaults button
+        # Bottom bar: Undo (left) | Reset to Defaults (right)
+        btn_bar = "#{frame}.btn_bar"
+        @app.command('ttk::frame', btn_bar)
+        @app.command(:pack, btn_bar, fill: :x, side: :bottom, padx: 10, pady: [4, 8])
+
+        @app.command('ttk::button', GP_UNDO_BTN, text: 'Undo',
+          state: :disabled, command: proc { do_undo_gamepad })
+        @app.command(:pack, GP_UNDO_BTN, side: :left)
+
         @app.command('ttk::button', GP_RESET_BTN, text: 'Reset to Defaults',
           command: proc { confirm_reset_gamepad })
-        @app.command(:pack, GP_RESET_BTN, side: :bottom, pady: [4, 8])
+        @app.command(:pack, GP_RESET_BTN, side: :right)
 
-        # Dead zone slider
+        # Dead zone slider (disabled in keyboard mode)
         dz_row = "#{frame}.dz_row"
         @app.command('ttk::frame', dz_row)
         @app.command(:pack, dz_row, fill: :x, padx: 10, pady: [4, 8], side: :bottom)
@@ -295,8 +345,12 @@ module Teek
             @app.command(@dz_val_label, 'configure', text: "#{pct}%")
             threshold = (pct / 100.0 * 32767).round
             @callbacks[:on_deadzone_change]&.call(threshold)
+            mark_dirty
           })
         @app.command(:pack, DEADZONE_SCALE, side: :right, padx: [5, 5])
+
+        # Start in keyboard mode — dead zone disabled
+        set_deadzone_enabled(false)
       end
 
       def make_gba_button(path, parent, gba_btn, side: :left)
@@ -323,12 +377,49 @@ module Teek
       end
 
       def reset_gamepad_defaults
-        @gp_labels = DEFAULT_GP_LABELS.dup
+        @gp_labels = (@keyboard_mode ? DEFAULT_KB_LABELS : DEFAULT_GP_LABELS).dup
         GBA_BUTTONS.each do |gba_btn, widget|
           @app.command(widget, 'configure', text: btn_display(gba_btn))
         end
-        @app.command(DEADZONE_SCALE, 'set', 25)
-        @callbacks[:on_gamepad_reset]&.call
+        @app.command(DEADZONE_SCALE, 'set', 25) unless @keyboard_mode
+        @app.command(GP_UNDO_BTN, 'configure', state: :disabled)
+        if @keyboard_mode
+          @callbacks[:on_keyboard_reset]&.call
+        else
+          @callbacks[:on_gamepad_reset]&.call
+        end
+        mark_dirty
+      end
+
+      def do_undo_gamepad
+        @callbacks[:on_undo_gamepad]&.call
+        @app.command(GP_UNDO_BTN, 'configure', state: :disabled)
+      end
+
+      def switch_input_mode
+        cancel_listening
+        selected = @app.get_variable(VAR_GAMEPAD)
+        @keyboard_mode = (selected == 'Keyboard Only')
+
+        if @keyboard_mode
+          @gp_labels = DEFAULT_KB_LABELS.dup
+          set_deadzone_enabled(false)
+        else
+          @gp_labels = DEFAULT_GP_LABELS.dup
+          set_deadzone_enabled(true)
+        end
+
+        GBA_BUTTONS.each do |gba_btn, widget|
+          @app.command(widget, 'configure', text: btn_display(gba_btn))
+        end
+
+        @app.command(GP_UNDO_BTN, 'configure', state: :disabled)
+        @callbacks[:on_input_mode_change]&.call(@keyboard_mode, selected)
+      end
+
+      def set_deadzone_enabled(enabled)
+        state = enabled ? :normal : :disabled
+        @app.command(DEADZONE_SCALE, 'configure', state: state)
       end
 
       LISTEN_TIMEOUT_MS = 10_000
@@ -339,6 +430,14 @@ module Teek
         widget = GBA_BUTTONS[gba_btn]
         @app.command(widget, 'configure', text: "#{gba_btn.upcase}: Press...")
         @listen_timer = @app.after(LISTEN_TIMEOUT_MS) { cancel_listening }
+
+        if @keyboard_mode
+          # Use tcl_eval directly because Teek's command() wraps each arg in
+          # braces, which breaks Tk event substitutions like %K in bind scripts.
+          cb_id = @app.interp.register_callback(
+            proc { |keysym, *| capture_mapping(keysym) })
+          @app.tcl_eval("bind #{TOP} <Key> {ruby_callback #{cb_id} %K}")
+        end
       end
 
       def cancel_listening
@@ -347,30 +446,54 @@ module Teek
           @listen_timer = nil
         end
         if @listening_for
+          unbind_keyboard_listen
           widget = GBA_BUTTONS[@listening_for]
           @app.command(widget, 'configure', text: btn_display(@listening_for))
           @listening_for = nil
         end
       end
 
+      def unbind_keyboard_listen
+        @app.tcl_eval("bind #{TOP} <Key> {}")
+      end
+
       # Called by the player's poll loop when a gamepad button is detected
       # during listen mode.
       public
 
-      def capture_mapping(gamepad_button)
+      # Refresh the gamepad tab widgets from external state (e.g. after undo).
+      # @param labels [Hash{Symbol => String}] GBA button → gamepad button name
+      # @param dead_zone [Integer] dead zone percentage (0-50)
+      def refresh_gamepad(labels, dead_zone)
+        @gp_labels = labels.dup
+        GBA_BUTTONS.each do |gba_btn, widget|
+          @app.command(widget, 'configure', text: btn_display(gba_btn))
+        end
+        @app.command(DEADZONE_SCALE, 'set', dead_zone)
+      end
+
+      def capture_mapping(button)
         return unless @listening_for
 
         if @listen_timer
           @app.command(:after, :cancel, @listen_timer)
           @listen_timer = nil
         end
+        unbind_keyboard_listen
 
         gba_btn = @listening_for
-        @gp_labels[gba_btn] = gamepad_button.to_s
+        @gp_labels[gba_btn] = button.to_s
         widget = GBA_BUTTONS[gba_btn]
         @app.command(widget, 'configure', text: btn_display(gba_btn))
         @listening_for = nil
-        @callbacks[:on_gamepad_map_change]&.call(gba_btn, gamepad_button)
+
+        if @keyboard_mode
+          @callbacks[:on_keyboard_map_change]&.call(gba_btn, button)
+        else
+          @callbacks[:on_gamepad_map_change]&.call(gba_btn, button)
+        end
+        @app.command(GP_UNDO_BTN, 'configure', state: :normal)
+        mark_dirty
       end
     end
   end

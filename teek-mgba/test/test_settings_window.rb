@@ -3,7 +3,7 @@
 require "minitest/autorun"
 require_relative "../../test/tk_test_helper"
 
-class TestSettingsWindow < Minitest::Test
+class TestMGBASettingsWindow < Minitest::Test
   include TeekTestHelper
 
   # -- Video scale --------------------------------------------------------
@@ -217,6 +217,12 @@ class TestSettingsWindow < Minitest::Test
       sw.show
       app.update
 
+      # Switch to gamepad mode (dead zone is disabled in keyboard mode)
+      sw.update_gamepad_list(['Keyboard Only', 'Test Gamepad'])
+      app.set_variable(Teek::MGBA::SettingsWindow::VAR_GAMEPAD, 'Test Gamepad')
+      app.command(:event, 'generate', Teek::MGBA::SettingsWindow::GAMEPAD_COMBO, '<<ComboboxSelected>>')
+      app.update
+
       app.command(Teek::MGBA::SettingsWindow::DEADZONE_SCALE, 'set', 15)
       app.update
 
@@ -246,26 +252,26 @@ class TestSettingsWindow < Minitest::Test
     assert_tk_app("capture_mapping updates button label") do
       require "teek/mgba/settings_window"
       received_gba = nil
-      received_gp = nil
+      received_key = nil
       sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {
-        on_gamepad_map_change: proc { |g, b| received_gba = g; received_gp = b }
+        on_keyboard_map_change: proc { |g, b| received_gba = g; received_key = b }
       })
       sw.show
       app.update
 
-      # Enter listen mode for A
+      # Default mode is keyboard — enter listen mode for A
       app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'invoke')
       app.update
 
-      # Simulate gamepad button capture
-      sw.capture_mapping(:x)
+      # Simulate keyboard key capture
+      sw.capture_mapping('q')
       app.update
 
       assert_nil sw.listening_for
       assert_equal :a, received_gba
-      assert_equal :x, received_gp
+      assert_equal 'q', received_key
       text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'cget', '-text')
-      assert_equal 'A: x', text
+      assert_equal 'A: q', text
     end
   end
 
@@ -277,6 +283,210 @@ class TestSettingsWindow < Minitest::Test
       app.update
 
       assert_equal 'Keyboard Only', app.get_variable(Teek::MGBA::SettingsWindow::VAR_GAMEPAD)
+    end
+  end
+
+  # -- Undo button ----------------------------------------------------------
+
+  def test_undo_starts_disabled
+    assert_tk_app("undo button starts disabled") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      state = app.command(Teek::MGBA::SettingsWindow::GP_UNDO_BTN, 'cget', '-state')
+      assert_equal 'disabled', state
+    end
+  end
+
+  def test_undo_enabled_after_remap
+    assert_tk_app("undo enabled after capturing a mapping") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'invoke')
+      app.update
+      sw.capture_mapping(:x)
+      app.update
+
+      state = app.command(Teek::MGBA::SettingsWindow::GP_UNDO_BTN, 'cget', '-state')
+      assert_equal 'normal', state
+    end
+  end
+
+  def test_undo_fires_callback_and_disables
+    assert_tk_app("undo fires on_undo_gamepad and disables itself") do
+      require "teek/mgba/settings_window"
+      undo_called = false
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {
+        on_undo_gamepad: proc { undo_called = true }
+      })
+      sw.show
+      app.update
+
+      # Remap to enable undo
+      app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'invoke')
+      app.update
+      sw.capture_mapping(:x)
+      app.update
+
+      # Click undo
+      app.command(Teek::MGBA::SettingsWindow::GP_UNDO_BTN, 'invoke')
+      app.update
+
+      assert undo_called
+      state = app.command(Teek::MGBA::SettingsWindow::GP_UNDO_BTN, 'cget', '-state')
+      assert_equal 'disabled', state
+    end
+  end
+
+  def test_reset_disables_undo
+    assert_tk_app("reset to defaults disables undo button") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      # Remap to enable undo
+      app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'invoke')
+      app.update
+      sw.capture_mapping(:x)
+      app.update
+
+      state = app.command(Teek::MGBA::SettingsWindow::GP_UNDO_BTN, 'cget', '-state')
+      assert_equal 'normal', state
+
+      # refresh_gamepad simulates what reset/undo would do from the player side
+      sw.refresh_gamepad(Teek::MGBA::SettingsWindow::DEFAULT_GP_LABELS, 25)
+      app.update
+
+      # Verify labels restored
+      text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'cget', '-text')
+      assert_equal 'A: a', text
+    end
+  end
+
+  # -- Keyboard mode --------------------------------------------------------
+
+  def test_starts_in_keyboard_mode
+    assert_tk_app("starts in keyboard mode") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      assert sw.keyboard_mode?
+    end
+  end
+
+  def test_keyboard_mode_labels_show_keysyms
+    assert_tk_app("keyboard mode shows keysym labels") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'cget', '-text')
+      assert_equal 'A: z', text
+      text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_START, 'cget', '-text')
+      assert_equal 'START: Return', text
+    end
+  end
+
+  def test_switching_to_gamepad_mode_changes_labels
+    assert_tk_app("switching to gamepad shows gamepad labels") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      sw.update_gamepad_list(['Keyboard Only', 'Test Gamepad'])
+      app.set_variable(Teek::MGBA::SettingsWindow::VAR_GAMEPAD, 'Test Gamepad')
+      app.command(:event, 'generate', Teek::MGBA::SettingsWindow::GAMEPAD_COMBO, '<<ComboboxSelected>>')
+      app.update
+
+      refute sw.keyboard_mode?
+      text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'cget', '-text')
+      assert_equal 'A: a', text
+      text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_START, 'cget', '-text')
+      assert_equal 'START: start', text
+    end
+  end
+
+  def test_deadzone_disabled_in_keyboard_mode
+    assert_tk_app("dead zone slider disabled in keyboard mode") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      state = app.command(Teek::MGBA::SettingsWindow::DEADZONE_SCALE, 'cget', '-state')
+      assert_equal 'disabled', state
+    end
+  end
+
+  def test_deadzone_enabled_in_gamepad_mode
+    assert_tk_app("dead zone slider enabled in gamepad mode") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      sw.update_gamepad_list(['Keyboard Only', 'Test Gamepad'])
+      app.set_variable(Teek::MGBA::SettingsWindow::VAR_GAMEPAD, 'Test Gamepad')
+      app.command(:event, 'generate', Teek::MGBA::SettingsWindow::GAMEPAD_COMBO, '<<ComboboxSelected>>')
+      app.update
+
+      state = app.command(Teek::MGBA::SettingsWindow::DEADZONE_SCALE, 'cget', '-state')
+      assert_equal 'normal', state
+    end
+  end
+
+  def test_keyboard_capture_fires_keyboard_callback
+    assert_tk_app("keyboard capture fires on_keyboard_map_change") do
+      require "teek/mgba/settings_window"
+      received_gba = nil
+      received_key = nil
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {
+        on_keyboard_map_change: proc { |g, k| received_gba = g; received_key = k }
+      })
+      sw.show
+      app.update
+
+      app.command(Teek::MGBA::SettingsWindow::GP_BTN_B, 'invoke')
+      app.update
+      sw.capture_mapping('space')
+      app.update
+
+      assert_equal :b, received_gba
+      assert_equal 'space', received_key
+    end
+  end
+
+  def test_switching_mode_cancels_listen
+    assert_tk_app("switching input mode cancels active listen") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      # Start listening in keyboard mode
+      app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'invoke')
+      app.update
+      assert_equal :a, sw.listening_for
+
+      # Switch to gamepad mode — should cancel listen
+      sw.update_gamepad_list(['Keyboard Only', 'Test Gamepad'])
+      app.set_variable(Teek::MGBA::SettingsWindow::VAR_GAMEPAD, 'Test Gamepad')
+      app.command(:event, 'generate', Teek::MGBA::SettingsWindow::GAMEPAD_COMBO, '<<ComboboxSelected>>')
+      app.update
+
+      assert_nil sw.listening_for
+      text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'cget', '-text')
+      assert_equal 'A: a', text  # reverted to gamepad default (not "Press...")
     end
   end
 
@@ -299,6 +509,13 @@ class TestSettingsWindow < Minitest::Test
       })
       sw.show
       app.update
+
+      # Switch to gamepad mode (default is keyboard)
+      sw.update_gamepad_list(['Keyboard Only', gp.name])
+      app.set_variable(Teek::MGBA::SettingsWindow::VAR_GAMEPAD, gp.name)
+      app.command(:event, 'generate', Teek::MGBA::SettingsWindow::GAMEPAD_COMBO, '<<ComboboxSelected>>')
+      app.update
+      refute sw.keyboard_mode?
 
       # Enter listen mode for B button
       app.command(Teek::MGBA::SettingsWindow::GP_BTN_B, 'invoke')
