@@ -362,6 +362,15 @@ namespace :docker do
     ruby_version == '4.0' ? base : "#{base}-ruby#{ruby_version}"
   end
 
+  def warn_if_containers_running(image_name)
+    running = `docker ps --filter ancestor=#{image_name} --format '{{.ID}} {{.Status}}'`.strip
+    return if running.empty?
+    count = running.lines.size
+    warn "\n⚠  #{count} container(s) already running on #{image_name}:"
+    running.lines.each { |l| warn "   #{l.strip}" }
+    warn "   This usually means a previous test suite is stuck. Consider: docker kill $(docker ps -q --filter ancestor=#{image_name})\n"
+  end
+
   def tcl_version_from_env
     version = ENV.fetch('TCL_VERSION', '9.0')
     unless ['8.6', '9.0'].include?(version)
@@ -405,6 +414,8 @@ namespace :docker do
 
     require 'fileutils'
     FileUtils.mkdir_p('coverage')
+
+    warn_if_containers_running(image_name)
 
     puts "Running tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
     cmd = "docker run --rm --init"
@@ -468,6 +479,8 @@ namespace :docker do
       require 'fileutils'
       FileUtils.mkdir_p('coverage')
 
+      warn_if_containers_running(image_name)
+
       puts "Running teek-sdl2 tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
       cmd = "docker run --rm --init"
       cmd += " -v #{Dir.pwd}/coverage:/app/coverage"
@@ -491,6 +504,8 @@ namespace :docker do
 
       require 'fileutils'
       FileUtils.mkdir_p('coverage')
+
+      warn_if_containers_running(image_name)
 
       puts "Running teek-mgba tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
       cmd = "docker run --rm --init"

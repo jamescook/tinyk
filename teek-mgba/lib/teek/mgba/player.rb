@@ -31,6 +31,7 @@ module Teek
       # Keep audio buffer ~50% full by adjusting frame period ±0.5%.
       AUDIO_BUF_CAPACITY = (AUDIO_FREQ / GBA_FPS * 6).to_i  # ~6 frames (~100ms)
       MAX_DELTA          = 0.005
+      FF_MAX_FRAMES      = 10  # cap for uncapped turbo to avoid locking event loop
 
       # Default keyboard → GBA button bitmask (Tk keysym → bitmask)
       DEFAULT_KEY_MAP = {
@@ -82,6 +83,9 @@ module Teek
         @key_map = DEFAULT_KEY_MAP.dup
         @gamepad_map = DEFAULT_GAMEPAD_MAP.dup
         @dead_zone = Teek::SDL2::Gamepad::DEAD_ZONE
+        @turbo_speed = @config.turbo_speed
+        @turbo_volume = @config.turbo_volume_pct / 100.0
+        @fast_forward = false
         load_keyboard_config
 
         win_w = GBA_W * @scale
@@ -101,12 +105,17 @@ module Teek
           on_gamepad_reset:       method(:apply_gamepad_reset),
           on_keyboard_reset:      method(:apply_keyboard_reset),
           on_undo_gamepad:        method(:undo_mappings),
+          on_turbo_speed_change:  method(:apply_turbo_speed),
           on_close:               method(:on_settings_close),
           on_save:                method(:save_config),
         })
 
-        # Push loaded keyboard config into the settings UI
+        # Push loaded config into the settings UI
         @settings_window.refresh_gamepad(build_kb_labels, 0)
+        turbo_label = @turbo_speed == 0 ? 'Uncapped' : "#{@turbo_speed}x"
+        @app.set_variable(SettingsWindow::VAR_TURBO, turbo_label)
+        scale_label = "#{@scale}x"
+        @app.set_variable(SettingsWindow::VAR_SCALE, scale_label)
 
         # Input/emulation state (initialized before SDL2)
         @keys_held = Set.new
@@ -178,6 +187,11 @@ module Teek
         # Streaming texture at native GBA resolution
         @texture = @viewport.renderer.create_texture(GBA_W, GBA_H, :streaming)
 
+        # Font for on-screen indicators (fast-forward, etc.)
+        font_path = File.expand_path('../../../assets/JetBrainsMonoNL-Regular.ttf', __dir__)
+        @overlay_font = File.exist?(font_path) ? @viewport.renderer.load_font(font_path, 14) : nil
+        @ff_label_tex = nil
+
         # Audio stream — stereo int16 at GBA sample rate
         @stream = Teek::SDL2::AudioStream.new(
           frequency: AUDIO_FREQ,
@@ -209,6 +223,7 @@ module Teek
 
       def show_settings
         @was_paused_before_settings = @paused
+        toggle_fast_forward if @fast_forward
         toggle_pause if @core && !@paused
         @settings_window.show
       end
@@ -221,6 +236,7 @@ module Teek
         @config.scale = @scale
         @config.volume = (@volume * 100).round
         @config.muted = @muted
+        @config.turbo_speed = @turbo_speed
 
         # Save keyboard mappings under sentinel GUID
         @key_map.each do |keysym, bit|
@@ -419,6 +435,8 @@ module Teek
             @running = false
           elsif k == 'p'
             toggle_pause
+          elsif k == 'Tab'
+            toggle_fast_forward
           else
             @keys_held.add(k)
           end
@@ -489,6 +507,36 @@ module Teek
           @stream.resume
           @next_frame = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           @app.command(@emu_menu, :entryconfigure, 0, label: 'Pause')
+        end
+      end
+
+      def toggle_fast_forward
+        return unless @core
+        @fast_forward = !@fast_forward
+        if @fast_forward
+          rebuild_ff_label
+        else
+          destroy_ff_label
+          @next_frame = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          @stream.clear
+        end
+      end
+
+      def apply_turbo_speed(speed)
+        @turbo_speed = speed
+        rebuild_ff_label if @fast_forward
+      end
+
+      def rebuild_ff_label
+        destroy_ff_label
+        label = @turbo_speed == 0 ? '>> MAX' : ">> #{@turbo_speed}x"
+        @ff_label_tex = @overlay_font.render_text(label, 255, 255, 0)
+      end
+
+      def destroy_ff_label
+        if @ff_label_tex
+          @ff_label_tex.destroy
+          @ff_label_tex = nil
         end
       end
 
@@ -604,41 +652,18 @@ module Teek
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @next_frame ||= now
 
-        # Run as many frames as wall-clock says we owe (cap at 4)
+        if @fast_forward
+          tick_fast_forward(now)
+        else
+          tick_normal(now)
+        end
+      end
+
+      def tick_normal(now)
         frames = 0
         while @next_frame <= now && frames < 4
-          # 1. Input
-          kb_mask = 0
-          @key_map.each { |key, bit| kb_mask |= bit if @keys_held.include?(key) }
-
-          gp_mask = 0
-          begin
-            Teek::SDL2::Gamepad.poll_events
-            @gamepad ||= Teek::SDL2::Gamepad.first
-            if @gamepad && !@gamepad.closed?
-              @gamepad_map.each { |btn, bit| gp_mask |= bit if @gamepad.button?(btn) }
-            end
-          rescue StandardError
-            @gamepad = nil
-          end
-
-          @core.set_keys(kb_mask | gp_mask)
-
-          # 2. Emulate one frame
-          @core.run_frame
-
-          # 3. Audio — queue and apply dynamic rate control
-          pcm = @core.audio_buffer
-          unless pcm.empty?
-            @audio_samples_produced += pcm.bytesize / 4
-            if @muted
-              # Drain blip buffer but don't queue — keeps emulation in sync
-            elsif @volume < 1.0
-              @stream.queue(apply_volume_to_pcm(pcm))
-            else
-              @stream.queue(pcm)
-            end
-          end
+          run_one_frame
+          queue_audio
 
           # Near/byuu: nudge frame period ±0.5% to keep audio buffer ~50% full
           fill = (@stream.queued_samples.to_f / AUDIO_BUF_CAPACITY).clamp(0.0, 1.0)
@@ -647,27 +672,91 @@ module Teek
           frames += 1
         end
 
-        # Reset if we fell way behind
         @next_frame = now if now - @next_frame > 0.1
-
         return if frames == 0
 
-        # 4. Video — render last frame only
+        render_frame
+        update_fps(frames, now)
+      end
+
+      def tick_fast_forward(now)
+        target = @turbo_speed == 0 ? FF_MAX_FRAMES : @turbo_speed
+        frames = 0
+        while frames < target
+          run_one_frame
+
+          # Queue only the first frame's audio at reduced volume
+          if frames == 0
+            queue_audio(volume_override: @turbo_volume)
+          else
+            @core.audio_buffer # drain blip buffer, discard
+          end
+
+          frames += 1
+        end
+        @next_frame = now
+
+        render_frame(ff_indicator: true)
+        update_fps(frames, now)
+      end
+
+      def run_one_frame
+        kb_mask = 0
+        @key_map.each { |key, bit| kb_mask |= bit if @keys_held.include?(key) }
+
+        gp_mask = 0
+        begin
+          Teek::SDL2::Gamepad.poll_events
+          @gamepad ||= Teek::SDL2::Gamepad.first
+          if @gamepad && !@gamepad.closed?
+            @gamepad_map.each { |btn, bit| gp_mask |= bit if @gamepad.button?(btn) }
+          end
+        rescue StandardError
+          @gamepad = nil
+        end
+
+        @core.set_keys(kb_mask | gp_mask)
+        @core.run_frame
+      end
+
+      def queue_audio(volume_override: nil)
+        pcm = @core.audio_buffer
+        return if pcm.empty?
+
+        @audio_samples_produced += pcm.bytesize / 4
+        if @muted
+          # Drain blip buffer but don't queue — keeps emulation in sync
+        else
+          vol = volume_override || @volume
+          if vol < 1.0
+            @stream.queue(apply_volume_to_pcm(pcm, vol))
+          else
+            @stream.queue(pcm)
+          end
+        end
+      end
+
+      def render_frame(ff_indicator: false)
         pixels = @core.video_buffer_argb
         @texture.update(pixels)
         @viewport.render do |r|
           r.clear(0, 0, 0)
           r.copy(@texture)
+          if ff_indicator && @ff_label_tex
+            r.copy(@ff_label_tex, nil, [4, 4, @ff_label_tex.width, @ff_label_tex.height])
+          end
         end
+      end
 
-        # 5. FPS
+      def update_fps(frames, now)
         @fps_count += frames
         elapsed = now - @fps_time
         if elapsed >= 1.0
           fps = @fps_count / elapsed
           actual_rate = (@audio_samples_produced / elapsed).round
           buf_ms = (@stream.queued_samples * 1000.0 / AUDIO_FREQ).round
-          @app.set_window_title("mGBA — #{@core.title}  #{fps.round(1)} fps  rate:#{actual_rate}  buf:#{buf_ms}ms")
+          ff_tag = @fast_forward ? '  >> FF' : ''
+          @app.set_window_title("mGBA — #{@core.title}  #{fps.round(1)} fps  rate:#{actual_rate}  buf:#{buf_ms}ms#{ff_tag}")
           @audio_samples_produced = 0
           @fps_count = 0
           @fps_time = now
@@ -675,27 +764,32 @@ module Teek
       end
 
       def animate
-        tick
         if @running
+          tick
           delay = (@core && !@paused) ? 1 : 100
           @app.after(delay) { animate }
         else
+          cleanup
           @app.command(:destroy, '.')
         end
       end
 
       # Apply software volume to int16 stereo PCM data.
-      def apply_volume_to_pcm(pcm)
+      def apply_volume_to_pcm(pcm, gain = @volume)
         samples = pcm.unpack('s*')
-        gain = @volume
         samples.map! { |s| (s * gain).round.clamp(-32768, 32767) }
         samples.pack('s*')
       end
 
       def cleanup
+        return if @cleaned_up
+        @cleaned_up = true
+
         @stream&.pause unless @stream&.destroyed?
+        destroy_ff_label
+        @overlay_font&.destroy unless @overlay_font&.destroyed?
         @stream&.destroy unless @stream&.destroyed?
-        @texture&.destroy
+        @texture&.destroy unless @texture&.destroyed?
         @core&.destroy unless @core&.destroyed?
       end
     end

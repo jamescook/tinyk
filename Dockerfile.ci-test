@@ -162,7 +162,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libsdl2-ttf-2.0-0 \
     libsdl2-image-2.0-0 \
     libsdl2-mixer-2.0-0 \
-    libmgba0.10t64
+    libmgba0.10t64 \
+    pulseaudio
 
 # Tcl/Tk version-specific packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -223,6 +224,10 @@ COPY sample/ sample/
 COPY teek-sdl2/test/ teek-sdl2/test/
 COPY teek-sdl2/assets/ teek-sdl2/assets/
 COPY teek-mgba/test/ teek-mgba/test/
+COPY teek-mgba/assets/ teek-mgba/assets/
 COPY screenshots/blessed/ screenshots/blessed/
 
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["xvfb-run", "-a", "bundle", "exec", "rake", "test"]

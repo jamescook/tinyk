@@ -248,6 +248,47 @@ class TestMGBAConfig < Minitest::Test
     assert_equal 0, c.dead_zone(guid)
   end
 
+  # -- Turbo settings ------------------------------------------------------
+
+  def test_defaults_turbo_speed
+    assert_equal 2, new_config.turbo_speed
+  end
+
+  def test_set_turbo_speed
+    c = new_config
+    c.turbo_speed = 4
+    assert_equal 4, c.turbo_speed
+  end
+
+  def test_defaults_turbo_volume_pct
+    assert_equal 25, new_config.turbo_volume_pct
+  end
+
+  def test_set_turbo_volume_pct
+    c = new_config
+    c.turbo_volume_pct = 50
+    assert_equal 50, c.turbo_volume_pct
+  end
+
+  def test_turbo_volume_pct_clamps
+    c = new_config
+    c.turbo_volume_pct = -10
+    assert_equal 0, c.turbo_volume_pct
+    c.turbo_volume_pct = 200
+    assert_equal 100, c.turbo_volume_pct
+  end
+
+  def test_round_trip_turbo
+    c = new_config
+    c.turbo_speed = 3
+    c.turbo_volume_pct = 40
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_equal 3, c2.turbo_speed
+    assert_equal 40, c2.turbo_volume_pct
+  end
+
   # -- Recent ROMs ---------------------------------------------------------
 
   def test_recent_roms_default_empty

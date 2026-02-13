@@ -17,6 +17,7 @@ module Teek
 
       # Widget paths for test interaction
       SCALE_COMBO = "#{NB}.video.scale_row.scale_combo"
+      TURBO_COMBO = "#{NB}.video.turbo_row.turbo_combo"
       VOLUME_SCALE = "#{NB}.audio.vol_row.vol_scale"
       MUTE_CHECK = "#{NB}.audio.mute_row.mute"
 
@@ -44,6 +45,7 @@ module Teek
 
       # Tcl variable names
       VAR_SCALE    = '::mgba_scale'
+      VAR_TURBO    = '::mgba_turbo'
       VAR_VOLUME   = '::mgba_volume'
       VAR_MUTE     = '::mgba_mute'
       VAR_GAMEPAD  = '::mgba_gamepad'
@@ -188,6 +190,30 @@ module Teek
               @callbacks[:on_scale_change]&.call(scale)
               mark_dirty
             end
+          })
+
+        # Turbo Speed
+        turbo_row = "#{frame}.turbo_row"
+        @app.command('ttk::frame', turbo_row)
+        @app.command(:pack, turbo_row, fill: :x, padx: 10, pady: 5)
+
+        @app.command('ttk::label', "#{turbo_row}.lbl", text: 'Turbo Speed:')
+        @app.command(:pack, "#{turbo_row}.lbl", side: :left)
+
+        @app.set_variable(VAR_TURBO, '2x')
+        @app.command('ttk::combobox', TURBO_COMBO,
+          textvariable: VAR_TURBO,
+          values: Teek.make_list('2x', '3x', '4x', 'Uncapped'),
+          state: :readonly,
+          width: 10)
+        @app.command(:pack, TURBO_COMBO, side: :right)
+
+        @app.command(:bind, TURBO_COMBO, '<<ComboboxSelected>>',
+          proc { |*|
+            val = @app.get_variable(VAR_TURBO)
+            speed = val == 'Uncapped' ? 0 : val.to_i
+            @callbacks[:on_turbo_speed_change]&.call(speed)
+            mark_dirty
           })
       end
 

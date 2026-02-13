@@ -20,9 +20,11 @@ module Teek
       FILENAME = 'settings.json'
 
       GLOBAL_DEFAULTS = {
-        'scale'  => 3,
-        'volume' => 100,
-        'muted'  => false,
+        'scale'            => 3,
+        'volume'           => 100,
+        'muted'            => false,
+        'turbo_speed'      => 2,
+        'turbo_volume_pct' => 25,
       }.freeze
 
       GAMEPAD_DEFAULTS = {
@@ -82,6 +84,24 @@ module Teek
 
       def muted=(val)
         global['muted'] = !!val
+      end
+
+      # @return [Integer] turbo speed multiplier (2, 3, 4, or 0 for uncapped)
+      def turbo_speed
+        global['turbo_speed']
+      end
+
+      def turbo_speed=(val)
+        global['turbo_speed'] = val.to_i
+      end
+
+      # @return [Integer] volume percentage during fast-forward (0-100, hidden setting)
+      def turbo_volume_pct
+        global['turbo_volume_pct']
+      end
+
+      def turbo_volume_pct=(val)
+        global['turbo_volume_pct'] = val.to_i.clamp(0, 100)
       end
 
       # -- Recent ROMs -------------------------------------------------------
