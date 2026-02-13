@@ -84,6 +84,34 @@ module Teek
         global['muted'] = !!val
       end
 
+      # -- Recent ROMs -------------------------------------------------------
+
+      MAX_RECENT_ROMS = 5
+
+      # @return [Array<String>] ROM paths, newest first
+      def recent_roms
+        @data['recent_roms'] ||= []
+      end
+
+      # Add a ROM path to the front of the recent list (deduplicates).
+      # @param path [String] absolute path to the ROM file
+      def add_recent_rom(path)
+        list = recent_roms
+        list.delete(path)
+        list.unshift(path)
+        list.pop while list.size > MAX_RECENT_ROMS
+      end
+
+      # Remove a specific ROM path from the recent list.
+      # @param path [String]
+      def remove_recent_rom(path)
+        recent_roms.delete(path)
+      end
+
+      def clear_recent_roms
+        @data['recent_roms'] = []
+      end
+
       # -- Per-gamepad settings ----------------------------------------------
 
       # @param guid [String] SDL joystick GUID, or KEYBOARD_GUID for keyboard bindings
@@ -181,13 +209,14 @@ module Teek
         data = JSON.parse(File.read(@path))
         data['global'] = GLOBAL_DEFAULTS.merge(data['global'] || {})
         data['gamepads'] ||= {}
+        data['recent_roms'] ||= []
         data
       rescue JSON::ParserError
         default_data
       end
 
       def default_data
-        { 'global' => deep_dup(GLOBAL_DEFAULTS), 'gamepads' => {} }
+        { 'global' => deep_dup(GLOBAL_DEFAULTS), 'gamepads' => {}, 'recent_roms' => [] }
       end
 
       def deep_dup(hash)

@@ -248,6 +248,68 @@ class TestMGBAConfig < Minitest::Test
     assert_equal 0, c.dead_zone(guid)
   end
 
+  # -- Recent ROMs ---------------------------------------------------------
+
+  def test_recent_roms_default_empty
+    assert_equal [], new_config.recent_roms
+  end
+
+  def test_add_recent_rom
+    c = new_config
+    c.add_recent_rom("/roms/a.gba")
+    c.add_recent_rom("/roms/b.gba")
+    assert_equal ["/roms/b.gba", "/roms/a.gba"], c.recent_roms
+  end
+
+  def test_add_recent_rom_deduplicates
+    c = new_config
+    c.add_recent_rom("/roms/a.gba")
+    c.add_recent_rom("/roms/b.gba")
+    c.add_recent_rom("/roms/a.gba")
+    assert_equal ["/roms/a.gba", "/roms/b.gba"], c.recent_roms
+  end
+
+  def test_add_recent_rom_caps_at_max
+    c = new_config
+    7.times { |i| c.add_recent_rom("/roms/#{i}.gba") }
+    assert_equal Teek::MGBA::Config::MAX_RECENT_ROMS, c.recent_roms.size
+    assert_equal "/roms/6.gba", c.recent_roms.first
+    assert_equal "/roms/2.gba", c.recent_roms.last
+  end
+
+  def test_remove_recent_rom
+    c = new_config
+    c.add_recent_rom("/roms/a.gba")
+    c.add_recent_rom("/roms/b.gba")
+    c.remove_recent_rom("/roms/a.gba")
+    assert_equal ["/roms/b.gba"], c.recent_roms
+  end
+
+  def test_remove_recent_rom_noop_if_missing
+    c = new_config
+    c.add_recent_rom("/roms/a.gba")
+    c.remove_recent_rom("/roms/nope.gba")
+    assert_equal ["/roms/a.gba"], c.recent_roms
+  end
+
+  def test_clear_recent_roms
+    c = new_config
+    c.add_recent_rom("/roms/a.gba")
+    c.add_recent_rom("/roms/b.gba")
+    c.clear_recent_roms
+    assert_equal [], c.recent_roms
+  end
+
+  def test_round_trip_recent_roms
+    c = new_config
+    c.add_recent_rom("/roms/a.gba")
+    c.add_recent_rom("/roms/b.gba")
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_equal ["/roms/b.gba", "/roms/a.gba"], c2.recent_roms
+  end
+
   # -- Edge cases -----------------------------------------------------------
 
   def test_corrupt_json_falls_back_to_defaults

@@ -170,9 +170,12 @@ class TestMGBASettingsWindow < Minitest::Test
   def test_show_and_hide
     assert_tk_app("show makes window visible, hide withdraws it") do
       require "teek/mgba/settings_window"
+      app.show
+      app.update
       sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
 
       sw.show
+      app.command(:focus, '-force', Teek::MGBA::SettingsWindow::TOP)
       app.update
       assert_equal 'normal', app.command(:wm, 'state', Teek::MGBA::SettingsWindow::TOP)
 

@@ -435,6 +435,22 @@ namespace :docker do
     sh cmd
   end
 
+  desc "Force rebuild Docker image (no cache)"
+  task :rebuild do
+    tcl_version = tcl_version_from_env
+    ruby_version = ruby_version_from_env
+    image_name = docker_image_name(tcl_version, ruby_version)
+
+    puts "Rebuilding Docker image (no cache) for Ruby #{ruby_version}, Tcl #{tcl_version}..."
+    cmd = "docker build -f #{DOCKERFILE} --no-cache"
+    cmd += " --label #{DOCKER_LABEL}"
+    cmd += " --build-arg RUBY_VERSION=#{ruby_version}"
+    cmd += " --build-arg TCL_VERSION=#{tcl_version}"
+    cmd += " -t #{image_name} ."
+
+    sh cmd
+  end
+
   desc "Remove dangling Docker images from teek builds"
   task :prune do
     sh "docker image prune -f --filter label=#{DOCKER_LABEL}"

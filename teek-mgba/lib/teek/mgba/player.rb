@@ -425,6 +425,14 @@ module Teek
         @app.command("#{menubar}.file", :add, :command,
                      label: 'Open ROM...', accelerator: 'Cmd+O',
                      command: proc { open_rom_dialog })
+
+        # Recent ROMs submenu
+        @recent_menu = "#{menubar}.file.recent"
+        @app.command(:menu, @recent_menu, tearoff: 0)
+        @app.command("#{menubar}.file", :add, :cascade,
+                     label: 'Recent', menu: @recent_menu)
+        rebuild_recent_menu
+
         @app.command("#{menubar}.file", :add, :separator)
         @app.command("#{menubar}.file", :add, :command,
                      label: 'Settings...', accelerator: 'Cmd+,',
@@ -494,6 +502,54 @@ module Teek
         @fps_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @next_frame = @fps_time
         @audio_samples_produced = 0
+
+        @config.add_recent_rom(path)
+        @config.save!
+        rebuild_recent_menu
+      end
+
+      def open_recent_rom(path)
+        unless File.exist?(path)
+          @app.command('tk_messageBox',
+            parent: '.',
+            title: 'ROM Not Found',
+            message: "The ROM file no longer exists:\n#{path}",
+            type: :ok,
+            icon: :error)
+          @config.remove_recent_rom(path)
+          @config.save!
+          rebuild_recent_menu
+          return
+        end
+        load_rom(path)
+      end
+
+      def rebuild_recent_menu
+        # Clear all existing entries
+        @app.command(@recent_menu, :delete, 0, :end) rescue nil
+
+        roms = @config.recent_roms
+        if roms.empty?
+          @app.command(@recent_menu, :add, :command,
+                       label: '(none)', state: :disabled)
+        else
+          roms.each do |rom_path|
+            label = File.basename(rom_path)
+            @app.command(@recent_menu, :add, :command,
+                         label: label,
+                         command: proc { open_recent_rom(rom_path) })
+          end
+          @app.command(@recent_menu, :add, :separator)
+          @app.command(@recent_menu, :add, :command,
+                       label: 'Clear',
+                       command: proc { clear_recent_roms })
+        end
+      end
+
+      def clear_recent_roms
+        @config.clear_recent_roms
+        @config.save!
+        rebuild_recent_menu
       end
 
       def tick
