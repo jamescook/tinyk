@@ -26,11 +26,37 @@ jobs:
         ruby-version: ${{ github.event.inputs.ruby_version }}
         bundler-cache: true
 
-    - name: Install Tcl/Tk via MSYS2
+    - name: Locate MSYS2
+      id: msys2
       shell: bash
       run: |
         MSYS2_ROOT=$(ruby -e "puts RbConfig::CONFIG['prefix']")/msys64
-        echo "MSYS2_ROOT=$MSYS2_ROOT"
+        echo "root=$MSYS2_ROOT" >> "$GITHUB_OUTPUT"
+
+    - name: Snapshot MSYS2 DB version
+      id: msys2-db
+      shell: bash
+      run: |
+        MSYS2_ROOT="${{ steps.msys2.outputs.root }}"
+        # Hash the sync DB to detect when upstream packages change
+        DB_HASH=$(cat "$MSYS2_ROOT"/var/lib/pacman/sync/*.db | sha256sum | cut -c1-16)
+        echo "hash=$DB_HASH" >> "$GITHUB_OUTPUT"
+
+    - name: Cache MSYS2 installed packages
+      id: msys2-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ steps.msys2.outputs.root }}/var/cache/pacman/pkg
+          ${{ steps.msys2.outputs.root }}/var/lib/pacman/local
+          ${{ steps.msys2.outputs.root }}/ucrt64
+        key: msys2-installed-${{ runner.os }}-ruby${{ github.event.inputs.ruby_version }}-${{ steps.msys2-db.outputs.hash }}-${{ hashFiles('.github/workflows/windows-test.yml') }}
+
+    - name: Install MSYS2 packages
+      if: steps.msys2-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        MSYS2_ROOT="${{ steps.msys2.outputs.root }}"
 
         $MSYS2_ROOT/usr/bin/pacman -S --needed --noconfirm \
           mingw-w64-ucrt-x86_64-tcl \
