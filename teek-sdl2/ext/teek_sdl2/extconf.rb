@@ -128,6 +128,16 @@ unless pkg_config('SDL2_mixer') || have_library('SDL2_mixer', 'Mix_OpenAudio', '
   MSG
 end
 
+# SDL2_gfx for drawing primitives (circles, ellipses, polygons, etc.)
+unless pkg_config('SDL2_gfx') || have_library('SDL2_gfx', 'filledCircleRGBA', 'SDL2/SDL2_gfxPrimitives.h')
+  abort <<~MSG
+    SDL2_gfx not found. Install it:
+      macOS:   brew install sdl2_gfx
+      Debian:  sudo apt-get install libsdl2-gfx-dev
+      Windows: pacman -S #{msys2_pkg_prefix}-SDL2_gfx  (MSYS2)
+  MSG
+end
+
 $srcs = ['teek_sdl2.c', 'sdl2surface.c', 'sdl2bridge.c', 'sdl2text.c', 'sdl2pixels.c', 'sdl2image.c', 'sdl2mixer.c', 'sdl2audio.c', 'sdl2gamepad.c']
 
 create_makefile('teek_sdl2')

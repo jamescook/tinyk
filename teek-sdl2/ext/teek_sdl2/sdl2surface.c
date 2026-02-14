@@ -1,4 +1,5 @@
 #include "teek_sdl2.h"
+#include <SDL2/SDL2_gfxPrimitives.h>
 
 /* ---------------------------------------------------------
  * Layer 1: Pure SDL2 surface management
@@ -328,6 +329,561 @@ renderer_draw_rounded_rect(int argc, VALUE *argv, VALUE self)
         if (err < 0) { err += 2 * dy + 1; }
         else { dx--; err += 2 * (dy - dx) + 1; }
     }
+    return self;
+}
+
+/* ---------------------------------------------------------
+ * SDL2_gfx primitives
+ * --------------------------------------------------------- */
+
+/*
+ * Teek::SDL2::Renderer#draw_circle(cx, cy, radius, r, g, b, a=255)
+ */
+static VALUE
+renderer_draw_circle(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 6, 7);
+    Sint16 cx  = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy  = (Sint16)NUM2INT(argv[1]);
+    Sint16 rad = (Sint16)NUM2INT(argv[2]);
+    r = (Uint8)NUM2INT(argv[3]);
+    g = (Uint8)NUM2INT(argv[4]);
+    b = (Uint8)NUM2INT(argv[5]);
+    if (argc > 6) a = (Uint8)NUM2INT(argv[6]);
+
+    circleRGBA(ren->renderer, cx, cy, rad, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#fill_circle(cx, cy, radius, r, g, b, a=255)
+ */
+static VALUE
+renderer_fill_circle(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 6, 7);
+    Sint16 cx  = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy  = (Sint16)NUM2INT(argv[1]);
+    Sint16 rad = (Sint16)NUM2INT(argv[2]);
+    r = (Uint8)NUM2INT(argv[3]);
+    g = (Uint8)NUM2INT(argv[4]);
+    b = (Uint8)NUM2INT(argv[5]);
+    if (argc > 6) a = (Uint8)NUM2INT(argv[6]);
+
+    filledCircleRGBA(ren->renderer, cx, cy, rad, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_aa_circle(cx, cy, radius, r, g, b, a=255)
+ *
+ * Anti-aliased circle outline.
+ */
+static VALUE
+renderer_draw_aa_circle(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 6, 7);
+    Sint16 cx  = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy  = (Sint16)NUM2INT(argv[1]);
+    Sint16 rad = (Sint16)NUM2INT(argv[2]);
+    r = (Uint8)NUM2INT(argv[3]);
+    g = (Uint8)NUM2INT(argv[4]);
+    b = (Uint8)NUM2INT(argv[5]);
+    if (argc > 6) a = (Uint8)NUM2INT(argv[6]);
+
+    aacircleRGBA(ren->renderer, cx, cy, rad, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_ellipse(cx, cy, rx, ry, r, g, b, a=255)
+ */
+static VALUE
+renderer_draw_ellipse(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 7, 8);
+    Sint16 cx = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy = (Sint16)NUM2INT(argv[1]);
+    Sint16 rx = (Sint16)NUM2INT(argv[2]);
+    Sint16 ry = (Sint16)NUM2INT(argv[3]);
+    r = (Uint8)NUM2INT(argv[4]);
+    g = (Uint8)NUM2INT(argv[5]);
+    b = (Uint8)NUM2INT(argv[6]);
+    if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
+
+    ellipseRGBA(ren->renderer, cx, cy, rx, ry, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#fill_ellipse(cx, cy, rx, ry, r, g, b, a=255)
+ */
+static VALUE
+renderer_fill_ellipse(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 7, 8);
+    Sint16 cx = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy = (Sint16)NUM2INT(argv[1]);
+    Sint16 rx = (Sint16)NUM2INT(argv[2]);
+    Sint16 ry = (Sint16)NUM2INT(argv[3]);
+    r = (Uint8)NUM2INT(argv[4]);
+    g = (Uint8)NUM2INT(argv[5]);
+    b = (Uint8)NUM2INT(argv[6]);
+    if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
+
+    filledEllipseRGBA(ren->renderer, cx, cy, rx, ry, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_aa_ellipse(cx, cy, rx, ry, r, g, b, a=255)
+ *
+ * Anti-aliased ellipse outline.
+ */
+static VALUE
+renderer_draw_aa_ellipse(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 7, 8);
+    Sint16 cx = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy = (Sint16)NUM2INT(argv[1]);
+    Sint16 rx = (Sint16)NUM2INT(argv[2]);
+    Sint16 ry = (Sint16)NUM2INT(argv[3]);
+    r = (Uint8)NUM2INT(argv[4]);
+    g = (Uint8)NUM2INT(argv[5]);
+    b = (Uint8)NUM2INT(argv[6]);
+    if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
+
+    aaellipseRGBA(ren->renderer, cx, cy, rx, ry, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_aa_line(x1, y1, x2, y2, r, g, b, a=255)
+ *
+ * Anti-aliased line.
+ */
+static VALUE
+renderer_draw_aa_line(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 7, 8);
+    Sint16 x1 = (Sint16)NUM2INT(argv[0]);
+    Sint16 y1 = (Sint16)NUM2INT(argv[1]);
+    Sint16 x2 = (Sint16)NUM2INT(argv[2]);
+    Sint16 y2 = (Sint16)NUM2INT(argv[3]);
+    r = (Uint8)NUM2INT(argv[4]);
+    g = (Uint8)NUM2INT(argv[5]);
+    b = (Uint8)NUM2INT(argv[6]);
+    if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
+
+    aalineRGBA(ren->renderer, x1, y1, x2, y2, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_thick_line(x1, y1, x2, y2, width, r, g, b, a=255)
+ *
+ * Line with specified pixel width (1-255).
+ */
+static VALUE
+renderer_draw_thick_line(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 8, 9);
+    Sint16 x1 = (Sint16)NUM2INT(argv[0]);
+    Sint16 y1 = (Sint16)NUM2INT(argv[1]);
+    Sint16 x2 = (Sint16)NUM2INT(argv[2]);
+    Sint16 y2 = (Sint16)NUM2INT(argv[3]);
+    Uint8 width = (Uint8)NUM2INT(argv[4]);
+    r = (Uint8)NUM2INT(argv[5]);
+    g = (Uint8)NUM2INT(argv[6]);
+    b = (Uint8)NUM2INT(argv[7]);
+    if (argc > 8) a = (Uint8)NUM2INT(argv[8]);
+
+    thickLineRGBA(ren->renderer, x1, y1, x2, y2, width, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_arc(cx, cy, radius, start, end, r, g, b, a=255)
+ *
+ * Arc outline. Angles in degrees (0=right, 90=down).
+ */
+static VALUE
+renderer_draw_arc(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 8, 9);
+    Sint16 cx    = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy    = (Sint16)NUM2INT(argv[1]);
+    Sint16 rad   = (Sint16)NUM2INT(argv[2]);
+    Sint16 start = (Sint16)NUM2INT(argv[3]);
+    Sint16 end   = (Sint16)NUM2INT(argv[4]);
+    r = (Uint8)NUM2INT(argv[5]);
+    g = (Uint8)NUM2INT(argv[6]);
+    b = (Uint8)NUM2INT(argv[7]);
+    if (argc > 8) a = (Uint8)NUM2INT(argv[8]);
+
+    arcRGBA(ren->renderer, cx, cy, rad, start, end, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_pie(cx, cy, radius, start, end, r, g, b, a=255)
+ *
+ * Pie (wedge) outline. Angles in degrees.
+ */
+static VALUE
+renderer_draw_pie(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 8, 9);
+    Sint16 cx    = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy    = (Sint16)NUM2INT(argv[1]);
+    Sint16 rad   = (Sint16)NUM2INT(argv[2]);
+    Sint16 start = (Sint16)NUM2INT(argv[3]);
+    Sint16 end   = (Sint16)NUM2INT(argv[4]);
+    r = (Uint8)NUM2INT(argv[5]);
+    g = (Uint8)NUM2INT(argv[6]);
+    b = (Uint8)NUM2INT(argv[7]);
+    if (argc > 8) a = (Uint8)NUM2INT(argv[8]);
+
+    pieRGBA(ren->renderer, cx, cy, rad, start, end, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#fill_pie(cx, cy, radius, start, end, r, g, b, a=255)
+ *
+ * Filled pie (wedge). Angles in degrees.
+ */
+static VALUE
+renderer_fill_pie(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 8, 9);
+    Sint16 cx    = (Sint16)NUM2INT(argv[0]);
+    Sint16 cy    = (Sint16)NUM2INT(argv[1]);
+    Sint16 rad   = (Sint16)NUM2INT(argv[2]);
+    Sint16 start = (Sint16)NUM2INT(argv[3]);
+    Sint16 end   = (Sint16)NUM2INT(argv[4]);
+    r = (Uint8)NUM2INT(argv[5]);
+    g = (Uint8)NUM2INT(argv[6]);
+    b = (Uint8)NUM2INT(argv[7]);
+    if (argc > 8) a = (Uint8)NUM2INT(argv[8]);
+
+    filledPieRGBA(ren->renderer, cx, cy, rad, start, end, r, g, b, a);
+    return self;
+}
+
+/* Helper: convert a Ruby Array of Integers to a C array of Sint16.
+ * Caller must xfree() the returned pointer. */
+static Sint16 *
+ary_to_sint16(VALUE ary, int *out_len)
+{
+    Check_Type(ary, T_ARRAY);
+    int n = (int)RARRAY_LEN(ary);
+    Sint16 *buf = ALLOC_N(Sint16, n);
+    for (int i = 0; i < n; i++) {
+        buf[i] = (Sint16)NUM2INT(rb_ary_entry(ary, i));
+    }
+    *out_len = n;
+    return buf;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_polygon(xs, ys, r, g, b, a=255)
+ *
+ * Polygon outline. xs and ys are Arrays of Integer coordinates.
+ */
+static VALUE
+renderer_draw_polygon(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 5, 6);
+    int nx, ny;
+    Sint16 *vx = ary_to_sint16(argv[0], &nx);
+    Sint16 *vy = ary_to_sint16(argv[1], &ny);
+    if (nx != ny) {
+        xfree(vx); xfree(vy);
+        rb_raise(rb_eArgError, "xs and ys must have the same length");
+    }
+    r = (Uint8)NUM2INT(argv[2]);
+    g = (Uint8)NUM2INT(argv[3]);
+    b = (Uint8)NUM2INT(argv[4]);
+    if (argc > 5) a = (Uint8)NUM2INT(argv[5]);
+
+    polygonRGBA(ren->renderer, vx, vy, nx, r, g, b, a);
+    xfree(vx); xfree(vy);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#fill_polygon(xs, ys, r, g, b, a=255)
+ *
+ * Filled polygon. xs and ys are Arrays of Integer coordinates.
+ */
+static VALUE
+renderer_fill_polygon(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 5, 6);
+    int nx, ny;
+    Sint16 *vx = ary_to_sint16(argv[0], &nx);
+    Sint16 *vy = ary_to_sint16(argv[1], &ny);
+    if (nx != ny) {
+        xfree(vx); xfree(vy);
+        rb_raise(rb_eArgError, "xs and ys must have the same length");
+    }
+    r = (Uint8)NUM2INT(argv[2]);
+    g = (Uint8)NUM2INT(argv[3]);
+    b = (Uint8)NUM2INT(argv[4]);
+    if (argc > 5) a = (Uint8)NUM2INT(argv[5]);
+
+    filledPolygonRGBA(ren->renderer, vx, vy, nx, r, g, b, a);
+    xfree(vx); xfree(vy);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_aa_polygon(xs, ys, r, g, b, a=255)
+ *
+ * Anti-aliased polygon outline. xs and ys are Arrays of Integer coordinates.
+ */
+static VALUE
+renderer_draw_aa_polygon(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 5, 6);
+    int nx, ny;
+    Sint16 *vx = ary_to_sint16(argv[0], &nx);
+    Sint16 *vy = ary_to_sint16(argv[1], &ny);
+    if (nx != ny) {
+        xfree(vx); xfree(vy);
+        rb_raise(rb_eArgError, "xs and ys must have the same length");
+    }
+    r = (Uint8)NUM2INT(argv[2]);
+    g = (Uint8)NUM2INT(argv[3]);
+    b = (Uint8)NUM2INT(argv[4]);
+    if (argc > 5) a = (Uint8)NUM2INT(argv[5]);
+
+    aapolygonRGBA(ren->renderer, vx, vy, nx, r, g, b, a);
+    xfree(vx); xfree(vy);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_bezier(xs, ys, steps, r, g, b, a=255)
+ *
+ * Bezier curve through control points. xs and ys are Arrays of Integer
+ * coordinates. steps controls interpolation smoothness (higher = smoother).
+ */
+static VALUE
+renderer_draw_bezier(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 6, 7);
+    int nx, ny;
+    Sint16 *vx = ary_to_sint16(argv[0], &nx);
+    Sint16 *vy = ary_to_sint16(argv[1], &ny);
+    if (nx != ny) {
+        xfree(vx); xfree(vy);
+        rb_raise(rb_eArgError, "xs and ys must have the same length");
+    }
+    int steps = NUM2INT(argv[2]);
+    r = (Uint8)NUM2INT(argv[3]);
+    g = (Uint8)NUM2INT(argv[4]);
+    b = (Uint8)NUM2INT(argv[5]);
+    if (argc > 6) a = (Uint8)NUM2INT(argv[6]);
+
+    bezierRGBA(ren->renderer, vx, vy, nx, steps, r, g, b, a);
+    xfree(vx); xfree(vy);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_trigon(x1, y1, x2, y2, x3, y3, r, g, b, a=255)
+ *
+ * Triangle outline.
+ */
+static VALUE
+renderer_draw_trigon(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 9, 10);
+    Sint16 x1 = (Sint16)NUM2INT(argv[0]);
+    Sint16 y1 = (Sint16)NUM2INT(argv[1]);
+    Sint16 x2 = (Sint16)NUM2INT(argv[2]);
+    Sint16 y2 = (Sint16)NUM2INT(argv[3]);
+    Sint16 x3 = (Sint16)NUM2INT(argv[4]);
+    Sint16 y3 = (Sint16)NUM2INT(argv[5]);
+    r = (Uint8)NUM2INT(argv[6]);
+    g = (Uint8)NUM2INT(argv[7]);
+    b = (Uint8)NUM2INT(argv[8]);
+    if (argc > 9) a = (Uint8)NUM2INT(argv[9]);
+
+    trigonRGBA(ren->renderer, x1, y1, x2, y2, x3, y3, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#fill_trigon(x1, y1, x2, y2, x3, y3, r, g, b, a=255)
+ *
+ * Filled triangle.
+ */
+static VALUE
+renderer_fill_trigon(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 9, 10);
+    Sint16 x1 = (Sint16)NUM2INT(argv[0]);
+    Sint16 y1 = (Sint16)NUM2INT(argv[1]);
+    Sint16 x2 = (Sint16)NUM2INT(argv[2]);
+    Sint16 y2 = (Sint16)NUM2INT(argv[3]);
+    Sint16 x3 = (Sint16)NUM2INT(argv[4]);
+    Sint16 y3 = (Sint16)NUM2INT(argv[5]);
+    r = (Uint8)NUM2INT(argv[6]);
+    g = (Uint8)NUM2INT(argv[7]);
+    b = (Uint8)NUM2INT(argv[8]);
+    if (argc > 9) a = (Uint8)NUM2INT(argv[9]);
+
+    filledTrigonRGBA(ren->renderer, x1, y1, x2, y2, x3, y3, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_aa_trigon(x1, y1, x2, y2, x3, y3, r, g, b, a=255)
+ *
+ * Anti-aliased triangle outline.
+ */
+static VALUE
+renderer_draw_aa_trigon(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 9, 10);
+    Sint16 x1 = (Sint16)NUM2INT(argv[0]);
+    Sint16 y1 = (Sint16)NUM2INT(argv[1]);
+    Sint16 x2 = (Sint16)NUM2INT(argv[2]);
+    Sint16 y2 = (Sint16)NUM2INT(argv[3]);
+    Sint16 x3 = (Sint16)NUM2INT(argv[4]);
+    Sint16 y3 = (Sint16)NUM2INT(argv[5]);
+    r = (Uint8)NUM2INT(argv[6]);
+    g = (Uint8)NUM2INT(argv[7]);
+    b = (Uint8)NUM2INT(argv[8]);
+    if (argc > 9) a = (Uint8)NUM2INT(argv[9]);
+
+    aatrigonRGBA(ren->renderer, x1, y1, x2, y2, x3, y3, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_pixel(x, y, r, g, b, a=255)
+ */
+static VALUE
+renderer_draw_pixel(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 5, 6);
+    Sint16 x = (Sint16)NUM2INT(argv[0]);
+    Sint16 y = (Sint16)NUM2INT(argv[1]);
+    r = (Uint8)NUM2INT(argv[2]);
+    g = (Uint8)NUM2INT(argv[3]);
+    b = (Uint8)NUM2INT(argv[4]);
+    if (argc > 5) a = (Uint8)NUM2INT(argv[5]);
+
+    pixelRGBA(ren->renderer, x, y, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_hline(x1, x2, y, r, g, b, a=255)
+ *
+ * Horizontal line from x1 to x2 at row y.
+ */
+static VALUE
+renderer_draw_hline(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 6, 7);
+    Sint16 x1 = (Sint16)NUM2INT(argv[0]);
+    Sint16 x2 = (Sint16)NUM2INT(argv[1]);
+    Sint16 y  = (Sint16)NUM2INT(argv[2]);
+    r = (Uint8)NUM2INT(argv[3]);
+    g = (Uint8)NUM2INT(argv[4]);
+    b = (Uint8)NUM2INT(argv[5]);
+    if (argc > 6) a = (Uint8)NUM2INT(argv[6]);
+
+    hlineRGBA(ren->renderer, x1, x2, y, r, g, b, a);
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_vline(x, y1, y2, r, g, b, a=255)
+ *
+ * Vertical line from y1 to y2 at column x.
+ */
+static VALUE
+renderer_draw_vline(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 6, 7);
+    Sint16 x  = (Sint16)NUM2INT(argv[0]);
+    Sint16 y1 = (Sint16)NUM2INT(argv[1]);
+    Sint16 y2 = (Sint16)NUM2INT(argv[2]);
+    r = (Uint8)NUM2INT(argv[3]);
+    g = (Uint8)NUM2INT(argv[4]);
+    b = (Uint8)NUM2INT(argv[5]);
+    if (argc > 6) a = (Uint8)NUM2INT(argv[6]);
+
+    vlineRGBA(ren->renderer, x, y1, y2, r, g, b, a);
     return self;
 }
 
@@ -773,6 +1329,27 @@ Init_sdl2surface(VALUE mTeekSDL2)
     rb_define_method(cRenderer, "draw_line", renderer_draw_line, -1);
     rb_define_method(cRenderer, "fill_rounded_rect", renderer_fill_rounded_rect, -1);
     rb_define_method(cRenderer, "draw_rounded_rect", renderer_draw_rounded_rect, -1);
+    rb_define_method(cRenderer, "draw_circle", renderer_draw_circle, -1);
+    rb_define_method(cRenderer, "fill_circle", renderer_fill_circle, -1);
+    rb_define_method(cRenderer, "draw_aa_circle", renderer_draw_aa_circle, -1);
+    rb_define_method(cRenderer, "draw_ellipse", renderer_draw_ellipse, -1);
+    rb_define_method(cRenderer, "fill_ellipse", renderer_fill_ellipse, -1);
+    rb_define_method(cRenderer, "draw_aa_ellipse", renderer_draw_aa_ellipse, -1);
+    rb_define_method(cRenderer, "draw_aa_line", renderer_draw_aa_line, -1);
+    rb_define_method(cRenderer, "draw_thick_line", renderer_draw_thick_line, -1);
+    rb_define_method(cRenderer, "draw_arc", renderer_draw_arc, -1);
+    rb_define_method(cRenderer, "draw_pie", renderer_draw_pie, -1);
+    rb_define_method(cRenderer, "fill_pie", renderer_fill_pie, -1);
+    rb_define_method(cRenderer, "draw_polygon", renderer_draw_polygon, -1);
+    rb_define_method(cRenderer, "fill_polygon", renderer_fill_polygon, -1);
+    rb_define_method(cRenderer, "draw_aa_polygon", renderer_draw_aa_polygon, -1);
+    rb_define_method(cRenderer, "draw_bezier", renderer_draw_bezier, -1);
+    rb_define_method(cRenderer, "draw_trigon", renderer_draw_trigon, -1);
+    rb_define_method(cRenderer, "fill_trigon", renderer_fill_trigon, -1);
+    rb_define_method(cRenderer, "draw_aa_trigon", renderer_draw_aa_trigon, -1);
+    rb_define_method(cRenderer, "draw_pixel", renderer_draw_pixel, -1);
+    rb_define_method(cRenderer, "draw_hline", renderer_draw_hline, -1);
+    rb_define_method(cRenderer, "draw_vline", renderer_draw_vline, -1);
     rb_define_method(cRenderer, "output_size", renderer_output_size, 0);
     rb_define_method(cRenderer, "read_pixels", renderer_read_pixels, 0);
     rb_define_method(cRenderer, "create_texture", renderer_create_texture, -1);

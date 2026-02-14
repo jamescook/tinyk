@@ -53,6 +53,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libsdl2-ttf-dev \
     libsdl2-image-dev \
     libsdl2-mixer-dev \
+    libsdl2-gfx-dev \
     libmgba-dev
 
 # Tcl/Tk dev packages for compilation
@@ -162,6 +163,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libsdl2-ttf-2.0-0 \
     libsdl2-image-2.0-0 \
     libsdl2-mixer-2.0-0 \
+    libsdl2-gfx-1.0-0 \
     libmgba0.10t64 \
     pulseaudio
 
