@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "child_window"
+
 module Teek
   module MGBA
     # Displays ROM metadata in a read-only window.
@@ -7,6 +9,8 @@ module Teek
     # Shown via View > ROM Info when a ROM is loaded. Contains a two-column
     # grid of labels: field name on the left, value on the right.
     class RomInfoWindow
+      include ChildWindow
+
       TOP = ".mgba_rom_info"
 
       # GBA maker/publisher codes (2-char ASCII → publisher name).
@@ -234,8 +238,9 @@ module Teek
         MAKER_CODES[code] || "Unknown (#{code})"
       end
 
-      def initialize(app)
+      def initialize(app, callbacks: {})
         @app = app
+        @callbacks = callbacks
         @built = false
       end
 
@@ -246,26 +251,23 @@ module Teek
       def show(core, rom_path:, save_path:)
         build_ui unless @built
         populate(core, rom_path, save_path)
-        @app.command(:wm, 'deiconify', TOP)
-        @app.command(:raise, TOP)
+        show_window(modal: false)
       end
 
       def hide
-        @app.command(:wm, 'withdraw', TOP)
+        hide_window(modal: false)
       end
 
       private
 
       def build_ui
-        @app.command(:toplevel, TOP)
-        @app.command(:wm, 'title', TOP, 'ROM Info')
-        @app.command(:wm, 'resizable', TOP, 0, 0)
-        @app.command(:wm, 'transient', TOP, '.')
+        build_toplevel('ROM Info') do
+          build_fields
+        end
+        @built = true
+      end
 
-        close_proc = proc { |*| hide }
-        @app.command(:wm, 'protocol', TOP, 'WM_DELETE_WINDOW', close_proc)
-
-        # Main frame with padding
+      def build_fields
         frame = "#{TOP}.f"
         @app.command('ttk::frame', frame, padding: 12)
         @app.command(:pack, frame, fill: :both, expand: 1)
@@ -300,11 +302,8 @@ module Teek
 
         # Close button
         btn = "#{frame}.close_btn"
-        @app.command('ttk::button', btn, text: 'Close', command: close_proc)
+        @app.command('ttk::button', btn, text: 'Close', command: proc { hide })
         @app.command(:grid, btn, row: rows.size, column: 0, columnspan: 2, pady: [12, 0])
-
-        @app.command(:wm, 'withdraw', TOP)
-        @built = true
       end
 
       def populate(core, rom_path, save_path)

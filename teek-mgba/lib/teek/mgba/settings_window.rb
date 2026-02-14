@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "child_window"
+
 module Teek
   module MGBA
     # Settings window for the mGBA Player.
@@ -12,6 +14,8 @@ module Teek
     # can interact with the UI the same way a user would (set variable,
     # generate event, assert result).
     class SettingsWindow
+      include ChildWindow
+
       TOP = ".mgba_settings"
       NB  = "#{TOP}.nb"
 
@@ -102,20 +106,7 @@ module Teek
         @keyboard_mode = true
         @gp_labels = DEFAULT_KB_LABELS.dup
 
-        app.command(:toplevel, TOP)
-        app.command(:wm, 'title', TOP, 'Settings')
-        app.command(:wm, 'geometry', TOP, '700x390')
-        app.command(:wm, 'resizable', TOP, 0, 0)
-        app.command(:wm, 'transient', TOP, '.')  # child of main window
-
-        # Hide on close, don't destroy
-        close_proc = proc { |*| hide }
-        app.command(:wm, 'protocol', TOP, 'WM_DELETE_WINDOW', close_proc)
-
-        setup_ui
-
-        # Start hidden
-        app.command(:wm, 'withdraw', TOP)
+        build_toplevel('Settings', geometry: '700x390') { setup_ui }
       end
 
       # @return [Symbol, nil] the GBA button currently listening for remap, or nil
@@ -129,10 +120,7 @@ module Teek
       # @param tab [String, nil] widget path of the tab to select (e.g. SS_TAB)
       def show(tab: nil)
         @app.command(NB, 'select', tab) if tab
-        @app.command(:wm, 'deiconify', TOP)
-        @app.command(:raise, TOP)
-        @app.command(:grab, :set, TOP)
-        @app.command(:focus, TOP)
+        show_window
       end
 
       # Tab widget paths keyed by menu-friendly name
@@ -144,9 +132,7 @@ module Teek
       }.freeze
 
       def hide
-        @app.command(:grab, :release, TOP)
-        @app.command(:wm, 'withdraw', TOP)
-        @callbacks[:on_close]&.call
+        hide_window
       end
 
       def update_gamepad_list(names)

@@ -394,4 +394,125 @@ class TestMGBAPlayer < Minitest::Test
     assert_includes stdout, "PASS", "Expected PASS in output\n#{output.join("\n")}"
     assert_match(/saved_slot=10/, stdout)
   end
+
+  # E2E: verify child windows are modal — only one can be open at a time.
+  # Opens Settings via menu, tries F6 for picker (should be blocked),
+  # closes Settings, opens picker via F6, tries Settings menu (blocked),
+  # closes picker. Checks window visibility via `wm state`.
+  def test_modal_child_blocks_concurrent_windows
+    skip "Run: ruby teek-mgba/scripts/generate_test_rom.rb" unless File.exist?(TEST_ROM)
+
+    code = <<~RUBY
+      require "teek/mgba"
+      require "support/player_helpers"
+
+      sw_top = Teek::MGBA::SettingsWindow::TOP
+      sp_top = Teek::MGBA::SaveStatePicker::TOP
+
+      player = Teek::MGBA::Player.new("#{TEST_ROM}")
+      app = player.instance_variable_get(:@app)
+
+      poll_until_ready(app) do
+        vp = player.instance_variable_get(:@viewport)
+        frame = vp.frame.path
+
+        $stderr.puts "DEBUG: frame=\#{frame}, focus=\#{app.command(:focus)}"
+
+        # 1. Open Settings via menu (Settings > Video = index 0)
+        app.command('.menubar.settings', :invoke, 0)
+        app.update
+        $stderr.puts "DEBUG: step1 done"
+
+        sw_state = app.command(:wm, 'state', sw_top)
+        unless sw_state == 'normal'
+          $stderr.puts "FAIL: Settings should be visible, got '\#{sw_state}'"
+          exit 1
+        end
+
+        # 2. Try Save States via Emulation menu — should be blocked by @modal_child
+        app.command('.menubar.emu', :invoke, 6)
+        app.update
+        $stderr.puts "DEBUG: step2 done"
+
+        # Picker window may not even exist yet (not built), or should be withdrawn
+        sp_state = begin
+          app.command(:wm, 'state', sp_top)
+        rescue
+          'withdrawn'
+        end
+        unless sp_state == 'withdrawn'
+          $stderr.puts "FAIL: Picker should be blocked while Settings is open, got '\#{sp_state}'"
+          exit 1
+        end
+
+        # 3. Close Settings via the window's hide method (releases grab + fires on_close)
+        player.settings_window.hide
+        app.update
+        $stderr.puts "DEBUG: step3 done, modal=\#{player.instance_variable_get(:@modal_child).inspect}"
+
+        sw_state = app.command(:wm, 'state', sw_top)
+        unless sw_state == 'withdrawn'
+          $stderr.puts "FAIL: Settings should be withdrawn after close, got '\#{sw_state}'"
+          exit 1
+        end
+
+        # 4. Now open picker — focus viewport, then press F6
+        # xvfb requires -force to reclaim focus after a grab release
+        app.tcl_eval("focus -force \#{frame}")
+        app.update
+        $stderr.puts "DEBUG: step4 focus=\#{app.tcl_eval('focus')}"
+        app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'F6')
+        app.update
+        $stderr.puts "DEBUG: step4 event sent"
+
+        sp_state = begin
+          app.command(:wm, 'state', sp_top)
+        rescue => e
+          $stderr.puts "DEBUG: sp_top error: \#{e.message}"
+          'withdrawn'
+        end
+        $stderr.puts "DEBUG: step4 sp_state=\#{sp_state}"
+        unless sp_state == 'normal'
+          $stderr.puts "FAIL: Picker should be visible after Settings closed, got '\#{sp_state}'"
+          exit 1
+        end
+
+        # 5. Try opening Settings via menu while picker is open — should be blocked
+        app.command('.menubar.settings', :invoke, 0)
+        app.update
+        $stderr.puts "DEBUG: step5 done"
+
+        sw_state = app.command(:wm, 'state', sw_top)
+        unless sw_state == 'withdrawn'
+          $stderr.puts "FAIL: Settings should be blocked while Picker is open, got '\#{sw_state}'"
+          exit 1
+        end
+
+        # 6. Close picker via its close button
+        app.command("\#{sp_top}.close_btn", 'invoke')
+        app.update
+        $stderr.puts "DEBUG: step6 done"
+
+        sp_state = app.command(:wm, 'state', sp_top)
+        unless sp_state == 'withdrawn'
+          $stderr.puts "FAIL: Picker should be withdrawn after close, got '\#{sp_state}'"
+          exit 1
+        end
+
+        $stdout.puts "PASS"
+        player.instance_variable_set(:@running, false)
+      end
+
+      player.run
+    RUBY
+
+    success, stdout, stderr, _status = tk_subprocess(code, timeout: 15)
+
+    output = []
+    output << "STDOUT:\n#{stdout}" unless stdout.empty?
+    output << "STDERR:\n#{stderr}" unless stderr.empty?
+
+    assert success, "Modal child test failed\n#{output.join("\n")}"
+    assert_includes stdout, "PASS", "Expected PASS in output\n#{output.join("\n")}"
+  end
 end

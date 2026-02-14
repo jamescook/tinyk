@@ -106,7 +106,14 @@ module Teek
 
         build_menu
 
-        @rom_info_window = RomInfoWindow.new(@app)
+        @rom_info_window = RomInfoWindow.new(@app, callbacks: {
+          on_close: method(:on_child_window_close),
+        })
+        @state_picker = SaveStatePicker.new(@app, callbacks: {
+          on_save: method(:save_state),
+          on_load: method(:load_state),
+          on_close: method(:on_child_window_close),
+        })
 
         @settings_window = SettingsWindow.new(@app, callbacks: {
           on_scale_change:        method(:apply_scale),
@@ -124,7 +131,7 @@ module Teek
           on_toast_duration_change: method(:apply_toast_duration),
           on_quick_slot_change:   method(:apply_quick_slot),
           on_backup_change:       method(:apply_backup),
-          on_close:               method(:on_settings_close),
+          on_close:               method(:on_child_window_close),
           on_save:                method(:save_config),
         })
 
@@ -149,6 +156,7 @@ module Teek
         @core = nil
         @rom_path = nil
         @initial_rom = rom_path
+        @modal_child = nil  # tracks which child window is open
 
         # Block interaction until SDL2 is ready
         @app.command('tk', 'busy', '.')
@@ -269,6 +277,8 @@ module Teek
 
       def show_rom_info
         return unless @core && !@core.destroyed?
+        return bell if @modal_child
+        @modal_child = :rom_info
         saves = @config.saves_dir
         sav_name = File.basename(@rom_path, File.extname(@rom_path)) + '.sav'
         sav_path = File.join(saves, sav_name)
@@ -364,14 +374,31 @@ module Teek
       end
 
       def show_settings(tab: nil)
-        @was_paused_before_settings = @paused
+        return bell if @modal_child
+        @modal_child = :settings
+        @was_paused_before_modal = @paused
         toggle_fast_forward if @fast_forward
         toggle_pause if @core && !@paused
         @settings_window.show(tab: tab)
       end
 
-      def on_settings_close
-        toggle_pause if @core && !@was_paused_before_settings
+      def show_state_picker
+        return unless @core && !@core.destroyed? && @state_dir
+        return bell if @modal_child
+        @modal_child = :picker
+        @was_paused_before_modal = @paused
+        toggle_fast_forward if @fast_forward
+        toggle_pause if @core && !@paused
+        @state_picker.show(state_dir: @state_dir, quick_slot: @quick_save_slot)
+      end
+
+      def on_child_window_close
+        toggle_pause if @core && !@was_paused_before_modal
+        @modal_child = nil
+      end
+
+      def bell
+        @app.command(:bell)
       end
 
       def save_config
@@ -591,6 +618,8 @@ module Teek
             toggle_show_fps
           elsif k == 'F5'
             quick_save
+          elsif k == 'F6'
+            show_state_picker
           elsif k == 'F8'
             quick_load
           else
@@ -675,11 +704,15 @@ module Teek
                      command: proc { reset_core })
         @app.command(@emu_menu, :add, :separator)
         @app.command(@emu_menu, :add, :command,
-                     label: 'Quick Save', accelerator: 'F5',
+                     label: 'Quick Save', accelerator: 'F5', state: :disabled,
                      command: proc { quick_save })
         @app.command(@emu_menu, :add, :command,
-                     label: 'Quick Load', accelerator: 'F8',
+                     label: 'Quick Load', accelerator: 'F8', state: :disabled,
                      command: proc { quick_load })
+        @app.command(@emu_menu, :add, :separator)
+        @app.command(@emu_menu, :add, :command,
+                     label: 'Save States...', accelerator: 'F6', state: :disabled,
+                     command: proc { show_state_picker })
 
         @app.command(:bind, '.', '<Command-r>', proc { reset_core })
       end
@@ -901,6 +934,8 @@ module Teek
         @app.command(:place, :forget, @status_label) rescue nil
         @app.set_window_title("mGBA \u2014 #{@core.title}")
         @app.command(@view_menu, :entryconfigure, 1, state: :normal)
+        # Enable save state menu entries (Quick Save=3, Quick Load=4, Save States=6)
+        [3, 4, 6].each { |i| @app.command(@emu_menu, :entryconfigure, i, state: :normal) }
         @fps_count = 0
         @fps_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @next_frame = @fps_time
