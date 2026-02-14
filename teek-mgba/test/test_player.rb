@@ -32,4 +32,83 @@ class TestMGBAPlayer < Minitest::Test
 
     assert success, "Player should exit cleanly with ROM loaded (no hang)\n#{output.join("\n")}"
   end
+
+  # Simulate a user pressing F11 twice (fullscreen on → off) then q to quit.
+  # Exercises the wm attributes fullscreen path end-to-end. If the toggle
+  # causes a hang or crash the subprocess will time out.
+  def test_fullscreen_toggle_does_not_hang
+    code = <<~RUBY
+      require "teek/mgba"
+
+      player = Teek::MGBA::Player.new("#{TEST_ROM}")
+      app = player.instance_variable_get(:@app)
+
+      app.after(500) do
+        vp = player.instance_variable_get(:@viewport)
+        frame = vp.frame.path
+
+        # User presses F11 → fullscreen on
+        app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'F11')
+        app.update
+
+        app.after(300) do
+          # User presses F11 → fullscreen off
+          app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'F11')
+          app.update
+
+          app.after(200) do
+            # User presses q → quit
+            app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'q')
+          end
+        end
+      end
+
+      player.run
+    RUBY
+
+    success, stdout, stderr, _status = tk_subprocess(code, timeout: 15)
+
+    output = []
+    output << "STDOUT:\n#{stdout}" unless stdout.empty?
+    output << "STDERR:\n#{stderr}" unless stderr.empty?
+
+    assert success, "Player should exit cleanly after fullscreen toggle\n#{output.join("\n")}"
+  end
+
+  # Simulate a user enabling turbo (Tab), running a few frames at 2x speed,
+  # then pressing q to quit. Without the poll_input fix (update_state vs
+  # poll_events), SDL_PollEvent steals Tk keyboard events on macOS and
+  # the quit key never reaches the KeyPress handler — causing a hang.
+  def test_exit_during_turbo_does_not_hang
+    code = <<~RUBY
+      require "teek/mgba"
+
+      player = Teek::MGBA::Player.new("#{TEST_ROM}")
+      app = player.instance_variable_get(:@app)
+
+      app.after(500) do
+        vp = player.instance_variable_get(:@viewport)
+        frame = vp.frame.path
+
+        # User presses Tab → enable turbo (2x default)
+        app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'Tab')
+        app.update
+
+        app.after(500) do
+          # User presses q → quit (while still in turbo)
+          app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'q')
+        end
+      end
+
+      player.run
+    RUBY
+
+    success, stdout, stderr, _status = tk_subprocess(code, timeout: 15)
+
+    output = []
+    output << "STDOUT:\n#{stdout}" unless stdout.empty?
+    output << "STDERR:\n#{stderr}" unless stderr.empty?
+
+    assert success, "Player should exit cleanly during turbo mode (no hang)\n#{output.join("\n")}"
+  end
 end

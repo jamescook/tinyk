@@ -289,6 +289,50 @@ class TestMGBAConfig < Minitest::Test
     assert_equal 40, c2.turbo_volume_pct
   end
 
+  # -- Aspect ratio --------------------------------------------------------
+
+  def test_defaults_keep_aspect_ratio
+    assert new_config.keep_aspect_ratio?
+  end
+
+  def test_set_keep_aspect_ratio
+    c = new_config
+    c.keep_aspect_ratio = false
+    refute c.keep_aspect_ratio?
+    c.keep_aspect_ratio = true
+    assert c.keep_aspect_ratio?
+  end
+
+  def test_round_trip_keep_aspect_ratio
+    c = new_config
+    c.keep_aspect_ratio = false
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    refute c2.keep_aspect_ratio?
+  end
+
+  # -- Show FPS ------------------------------------------------------------
+
+  def test_defaults_show_fps
+    assert new_config.show_fps?
+  end
+
+  def test_set_show_fps
+    c = new_config
+    c.show_fps = false
+    refute c.show_fps?
+  end
+
+  def test_round_trip_show_fps
+    c = new_config
+    c.show_fps = false
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    refute c2.show_fps?
+  end
+
   # -- Recent ROMs ---------------------------------------------------------
 
   def test_recent_roms_default_empty

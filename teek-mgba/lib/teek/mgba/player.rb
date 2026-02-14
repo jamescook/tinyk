@@ -85,7 +85,10 @@ module Teek
         @dead_zone = Teek::SDL2::Gamepad::DEAD_ZONE
         @turbo_speed = @config.turbo_speed
         @turbo_volume = @config.turbo_volume_pct / 100.0
+        @keep_aspect_ratio = @config.keep_aspect_ratio?
+        @show_fps = @config.show_fps?
         @fast_forward = false
+        @fullscreen = false
         load_keyboard_config
 
         win_w = GBA_W * @scale
@@ -106,6 +109,8 @@ module Teek
           on_keyboard_reset:      method(:apply_keyboard_reset),
           on_undo_gamepad:        method(:undo_mappings),
           on_turbo_speed_change:  method(:apply_turbo_speed),
+          on_aspect_ratio_change: method(:apply_aspect_ratio),
+          on_show_fps_change:     method(:apply_show_fps),
           on_close:               method(:on_settings_close),
           on_save:                method(:save_config),
         })
@@ -116,6 +121,8 @@ module Teek
         @app.set_variable(SettingsWindow::VAR_TURBO, turbo_label)
         scale_label = "#{@scale}x"
         @app.set_variable(SettingsWindow::VAR_SCALE, scale_label)
+        @app.set_variable(SettingsWindow::VAR_ASPECT_RATIO, @keep_aspect_ratio ? '1' : '0')
+        @app.set_variable(SettingsWindow::VAR_SHOW_FPS, @show_fps ? '1' : '0')
 
         # Input/emulation state (initialized before SDL2)
         @keys_held = Set.new
@@ -191,6 +198,8 @@ module Teek
         font_path = File.expand_path('../../../assets/JetBrainsMonoNL-Regular.ttf', __dir__)
         @overlay_font = File.exist?(font_path) ? @viewport.renderer.load_font(font_path, 14) : nil
         @ff_label_tex = nil
+        @fps_tex = nil
+        @fps_shadow_tex = nil
 
         # Audio stream — stereo int16 at GBA sample rate
         @stream = Teek::SDL2::AudioStream.new(
@@ -237,6 +246,8 @@ module Teek
         @config.volume = (@volume * 100).round
         @config.muted = @muted
         @config.turbo_speed = @turbo_speed
+        @config.keep_aspect_ratio = @keep_aspect_ratio
+        @config.show_fps = @show_fps
 
         # Save keyboard mappings under sentinel GUID
         @key_map.each do |keysym, bit|
@@ -431,12 +442,18 @@ module Teek
 
       def setup_input
         @viewport.bind('KeyPress', :keysym) do |k|
-          if k == 'q' || k == 'Escape'
+          if k == 'q'
             @running = false
+          elsif k == 'Escape'
+            @fullscreen ? toggle_fullscreen : (@running = false)
           elsif k == 'p'
             toggle_pause
           elsif k == 'Tab'
             toggle_fast_forward
+          elsif k == 'F11'
+            toggle_fullscreen
+          elsif k == 'F3'
+            toggle_show_fps
           else
             @keys_held.add(k)
           end
@@ -448,6 +465,9 @@ module Teek
 
         @viewport.bind('FocusIn')  { @has_focus = true }
         @viewport.bind('FocusOut') { @has_focus = false }
+
+        # Alt+Return fullscreen toggle (emulator convention)
+        @app.command(:bind, @viewport.frame.path, '<Alt-Return>', proc { toggle_fullscreen })
       end
 
       def build_menu
@@ -481,6 +501,15 @@ module Teek
 
         @app.command(:bind, '.', '<Command-o>', proc { open_rom_dialog })
         @app.command(:bind, '.', '<Command-comma>', proc { show_settings })
+
+        # View menu
+        view_menu = "#{menubar}.view"
+        @app.command(:menu, view_menu, tearoff: 0)
+        @app.command(menubar, :add, :cascade, label: 'View', menu: view_menu)
+
+        @app.command(view_menu, :add, :command,
+                     label: 'Fullscreen', accelerator: 'F11',
+                     command: proc { toggle_fullscreen })
 
         # Emulation menu
         @emu_menu = "#{menubar}.emu"
@@ -525,6 +554,40 @@ module Teek
       def apply_turbo_speed(speed)
         @turbo_speed = speed
         rebuild_ff_label if @fast_forward
+      end
+
+      def apply_aspect_ratio(keep)
+        @keep_aspect_ratio = keep
+      end
+
+      def toggle_fullscreen
+        @fullscreen = !@fullscreen
+        @app.command(:wm, 'attributes', '.', '-fullscreen', @fullscreen ? 1 : 0)
+      end
+
+      def apply_show_fps(show)
+        @show_fps = show
+        destroy_fps_overlay unless @show_fps
+      end
+
+      def toggle_show_fps
+        @show_fps = !@show_fps
+        destroy_fps_overlay unless @show_fps
+        @app.set_variable(SettingsWindow::VAR_SHOW_FPS, @show_fps ? '1' : '0')
+      end
+
+      def rebuild_fps_overlay(text)
+        destroy_fps_overlay
+        return unless @overlay_font
+        @fps_tex = @overlay_font.render_text(text, 0, 255, 0)
+        @fps_shadow_tex = @overlay_font.render_text(text, 0, 0, 0)
+      end
+
+      def destroy_fps_overlay
+        @fps_tex&.destroy
+        @fps_tex = nil
+        @fps_shadow_tex&.destroy
+        @fps_shadow_tex = nil
       end
 
       def rebuild_ff_label
@@ -642,9 +705,11 @@ module Teek
         end
 
         if @paused
+          dest = compute_dest_rect
           @viewport.render do |r|
             r.clear(0, 0, 0)
-            r.copy(@texture)
+            r.copy(@texture, nil, dest)
+            draw_fps_overlay(r, dest)
           end
           return
         end
@@ -680,34 +745,51 @@ module Teek
       end
 
       def tick_fast_forward(now)
-        target = @turbo_speed == 0 ? FF_MAX_FRAMES : @turbo_speed
-        frames = 0
-        while frames < target
-          run_one_frame
-
-          # Queue only the first frame's audio at reduced volume
-          if frames == 0
-            queue_audio(volume_override: @turbo_volume)
-          else
-            @core.audio_buffer # drain blip buffer, discard
+        if @turbo_speed == 0
+          # Uncapped: poll input once per tick to avoid flooding the Cocoa
+          # event loop (SDL_PollEvent pumps it), then blast through frames.
+          keys = poll_input
+          FF_MAX_FRAMES.times do |i|
+            @core.set_keys(keys)
+            @core.run_frame
+            i == 0 ? queue_audio(volume_override: @turbo_volume) : @core.audio_buffer
           end
-
-          frames += 1
+          @next_frame = now
+          render_frame(ff_indicator: true)
+          update_fps(FF_MAX_FRAMES, now)
+          return
         end
-        @next_frame = now
+
+        # Paced turbo (2x, 3x, 4x): run @turbo_speed frames per FRAME_PERIOD.
+        # Same timing gate as tick_normal so 2x ≈ 120 fps, not 2000 fps.
+        frames = 0
+        while @next_frame <= now && frames < @turbo_speed * 4
+          @turbo_speed.times do
+            run_one_frame
+            frames == 0 ? queue_audio(volume_override: @turbo_volume) : @core.audio_buffer
+            frames += 1
+          end
+          @next_frame += FRAME_PERIOD
+        end
+        @next_frame = now if now - @next_frame > 0.1
+        return if frames == 0
 
         render_frame(ff_indicator: true)
         update_fps(frames, now)
       end
 
-      def run_one_frame
+      # Read keyboard + gamepad state, return combined bitmask.
+      # Uses SDL_GameControllerUpdate (not SDL_PollEvent) to read gamepad
+      # state without pumping the Cocoa event loop on macOS — SDL_PollEvent
+      # steals NSKeyDown events from Tk, making quit/escape unresponsive.
+      # Hot-plug detection is handled separately by start_gamepad_probe.
+      def poll_input
         kb_mask = 0
         @key_map.each { |key, bit| kb_mask |= bit if @keys_held.include?(key) }
 
         gp_mask = 0
         begin
-          Teek::SDL2::Gamepad.poll_events
-          @gamepad ||= Teek::SDL2::Gamepad.first
+          Teek::SDL2::Gamepad.update_state
           if @gamepad && !@gamepad.closed?
             @gamepad_map.each { |btn, bit| gp_mask |= bit if @gamepad.button?(btn) }
           end
@@ -715,7 +797,11 @@ module Teek
           @gamepad = nil
         end
 
-        @core.set_keys(kb_mask | gp_mask)
+        kb_mask | gp_mask
+      end
+
+      def run_one_frame
+        @core.set_keys(poll_input)
         @core.run_frame
       end
 
@@ -739,24 +825,71 @@ module Teek
       def render_frame(ff_indicator: false)
         pixels = @core.video_buffer_argb
         @texture.update(pixels)
+        dest = compute_dest_rect
         @viewport.render do |r|
           r.clear(0, 0, 0)
-          r.copy(@texture)
+          r.copy(@texture, nil, dest)
           if ff_indicator && @ff_label_tex
-            r.copy(@ff_label_tex, nil, [4, 4, @ff_label_tex.width, @ff_label_tex.height])
+            ox = dest ? dest[0] : 0
+            oy = dest ? dest[1] : 0
+            r.copy(@ff_label_tex, nil, [ox + 4, oy + 4, @ff_label_tex.width, @ff_label_tex.height])
           end
+          draw_fps_overlay(r, dest)
         end
+      end
+
+      # Draw FPS counter in top-right of game area with thick black outline
+      # for contrast — readable against any background. Uses 2px offsets in
+      # 8 directions so the outline is visible on HiDPI/Retina displays.
+      OUTLINE_OFFSETS = [[-2,0],[2,0],[0,-2],[0,2],[-1,-1],[-1,1],[1,-1],[1,1]].freeze
+
+      def draw_fps_overlay(r, dest)
+        return unless @show_fps && @fps_tex
+        fx = (dest ? dest[0] + dest[2] : r.output_size[0]) - @fps_tex.width - 6
+        fy = (dest ? dest[1] : 0) + 4
+        sw = @fps_shadow_tex.width
+        sh = @fps_shadow_tex.height
+        OUTLINE_OFFSETS.each { |dx, dy| r.copy(@fps_shadow_tex, nil, [fx + dx, fy + dy, sw, sh]) }
+        r.copy(@fps_tex, nil, [fx, fy, @fps_tex.width, @fps_tex.height])
+      end
+
+      # Calculate a centered destination rectangle that preserves the GBA's 3:2
+      # aspect ratio within the current renderer output. Returns nil when
+      # stretching is preferred (keep_aspect_ratio off).
+      #
+      # Example — fullscreen on a 1920x1080 (16:9) monitor:
+      #   scale_x = 1920 / 240 = 8.0
+      #   scale_y = 1080 / 160 = 6.75
+      #   scale   = min(8.0, 6.75) = 6.75   (height is the constraint)
+      #   dest    = [150, 0, 1620, 1080]     (pillarboxed: 150px black bars L+R)
+      #
+      # Example — fullscreen on a 2560x1600 (16:10) monitor:
+      #   scale_x = 2560 / 240 ≈ 10.67
+      #   scale_y = 1600 / 160 = 10.0
+      #   scale   = 10.0
+      #   dest    = [80, 0, 2400, 1600]      (pillarboxed: 80px bars L+R)
+      def compute_dest_rect
+        return nil unless @keep_aspect_ratio
+
+        out_w, out_h = @viewport.renderer.output_size
+        scale_x = out_w.to_f / GBA_W
+        scale_y = out_h.to_f / GBA_H
+        scale = [scale_x, scale_y].min
+
+        dest_w = (GBA_W * scale).to_i
+        dest_h = (GBA_H * scale).to_i
+        dest_x = (out_w - dest_w) / 2
+        dest_y = (out_h - dest_h) / 2
+
+        [dest_x, dest_y, dest_w, dest_h]
       end
 
       def update_fps(frames, now)
         @fps_count += frames
         elapsed = now - @fps_time
         if elapsed >= 1.0
-          fps = @fps_count / elapsed
-          actual_rate = (@audio_samples_produced / elapsed).round
-          buf_ms = (@stream.queued_samples * 1000.0 / AUDIO_FREQ).round
-          ff_tag = @fast_forward ? '  >> FF' : ''
-          @app.set_window_title("mGBA — #{@core.title}  #{fps.round(1)} fps  rate:#{actual_rate}  buf:#{buf_ms}ms#{ff_tag}")
+          fps = (@fps_count / elapsed).round(1)
+          rebuild_fps_overlay("#{fps} fps") if @show_fps
           @audio_samples_produced = 0
           @fps_count = 0
           @fps_time = now
@@ -787,6 +920,7 @@ module Teek
 
         @stream&.pause unless @stream&.destroyed?
         destroy_ff_label
+        destroy_fps_overlay
         @overlay_font&.destroy unless @overlay_font&.destroyed?
         @stream&.destroy unless @stream&.destroyed?
         @texture&.destroy unless @texture&.destroyed?

@@ -18,6 +18,8 @@ module Teek
       # Widget paths for test interaction
       SCALE_COMBO = "#{NB}.video.scale_row.scale_combo"
       TURBO_COMBO = "#{NB}.video.turbo_row.turbo_combo"
+      ASPECT_CHECK = "#{NB}.video.aspect_row.aspect"
+      SHOW_FPS_CHECK = "#{NB}.video.fps_row.fps_check"
       VOLUME_SCALE = "#{NB}.audio.vol_row.vol_scale"
       MUTE_CHECK = "#{NB}.audio.mute_row.mute"
 
@@ -50,6 +52,8 @@ module Teek
       VAR_MUTE     = '::mgba_mute'
       VAR_GAMEPAD  = '::mgba_gamepad'
       VAR_DEADZONE = '::mgba_deadzone'
+      VAR_ASPECT_RATIO = '::mgba_aspect_ratio'
+      VAR_SHOW_FPS = '::mgba_show_fps'
 
       # GBA button → widget path mapping
       GBA_BUTTONS = {
@@ -215,6 +219,38 @@ module Teek
             @callbacks[:on_turbo_speed_change]&.call(speed)
             mark_dirty
           })
+
+        # Aspect ratio checkbox
+        aspect_row = "#{frame}.aspect_row"
+        @app.command('ttk::frame', aspect_row)
+        @app.command(:pack, aspect_row, fill: :x, padx: 10, pady: 5)
+
+        @app.set_variable(VAR_ASPECT_RATIO, '1')
+        @app.command('ttk::checkbutton', ASPECT_CHECK,
+          text: 'Maintain aspect ratio',
+          variable: VAR_ASPECT_RATIO,
+          command: proc { |*|
+            keep = @app.get_variable(VAR_ASPECT_RATIO) == '1'
+            @callbacks[:on_aspect_ratio_change]&.call(keep)
+            mark_dirty
+          })
+        @app.command(:pack, ASPECT_CHECK, side: :left)
+
+        # Show FPS checkbox
+        fps_row = "#{frame}.fps_row"
+        @app.command('ttk::frame', fps_row)
+        @app.command(:pack, fps_row, fill: :x, padx: 10, pady: 5)
+
+        @app.set_variable(VAR_SHOW_FPS, '1')
+        @app.command('ttk::checkbutton', SHOW_FPS_CHECK,
+          text: 'Show FPS',
+          variable: VAR_SHOW_FPS,
+          command: proc { |*|
+            show = @app.get_variable(VAR_SHOW_FPS) == '1'
+            @callbacks[:on_show_fps_change]&.call(show)
+            mark_dirty
+          })
+        @app.command(:pack, SHOW_FPS_CHECK, side: :left)
       end
 
       def setup_audio_tab

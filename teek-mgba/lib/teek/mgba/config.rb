@@ -20,11 +20,13 @@ module Teek
       FILENAME = 'settings.json'
 
       GLOBAL_DEFAULTS = {
-        'scale'            => 3,
-        'volume'           => 100,
-        'muted'            => false,
-        'turbo_speed'      => 2,
-        'turbo_volume_pct' => 25,
+        'scale'              => 3,
+        'volume'             => 100,
+        'muted'              => false,
+        'turbo_speed'        => 2,
+        'turbo_volume_pct'   => 25,
+        'keep_aspect_ratio'  => true,
+        'show_fps'           => true,
       }.freeze
 
       GAMEPAD_DEFAULTS = {
@@ -102,6 +104,22 @@ module Teek
 
       def turbo_volume_pct=(val)
         global['turbo_volume_pct'] = val.to_i.clamp(0, 100)
+      end
+
+      def keep_aspect_ratio?
+        global['keep_aspect_ratio']
+      end
+
+      def keep_aspect_ratio=(val)
+        global['keep_aspect_ratio'] = !!val
+      end
+
+      def show_fps?
+        global['show_fps']
+      end
+
+      def show_fps=(val)
+        global['show_fps'] = !!val
       end
 
       # -- Recent ROMs -------------------------------------------------------

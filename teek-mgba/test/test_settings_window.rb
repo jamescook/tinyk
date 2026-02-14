@@ -372,6 +372,87 @@ class TestMGBASettingsWindow < Minitest::Test
     end
   end
 
+  # -- Aspect ratio checkbox ------------------------------------------------
+
+  def test_aspect_ratio_defaults_to_on
+    assert_tk_app("aspect ratio checkbox defaults to on") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      assert_equal '1', app.get_variable(Teek::MGBA::SettingsWindow::VAR_ASPECT_RATIO)
+    end
+  end
+
+  def test_unchecking_aspect_ratio_fires_callback
+    assert_tk_app("unchecking aspect ratio fires on_aspect_ratio_change") do
+      require "teek/mgba/settings_window"
+      received = nil
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {
+        on_aspect_ratio_change: proc { |keep| received = keep }
+      })
+      sw.show
+      app.update
+
+      # Simulate user unchecking the checkbox
+      app.command(Teek::MGBA::SettingsWindow::ASPECT_CHECK, 'invoke')
+      app.update
+
+      assert_equal false, received
+    end
+  end
+
+  def test_checking_aspect_ratio_fires_callback
+    assert_tk_app("re-checking aspect ratio fires callback with true") do
+      require "teek/mgba/settings_window"
+      received = nil
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {
+        on_aspect_ratio_change: proc { |keep| received = keep }
+      })
+      sw.show
+      app.update
+
+      # Uncheck then re-check
+      app.command(Teek::MGBA::SettingsWindow::ASPECT_CHECK, 'invoke')
+      app.update
+      app.command(Teek::MGBA::SettingsWindow::ASPECT_CHECK, 'invoke')
+      app.update
+
+      assert_equal true, received
+    end
+  end
+
+  # -- Show FPS checkbox ----------------------------------------------------
+
+  def test_show_fps_defaults_to_on
+    assert_tk_app("show fps checkbox defaults to on") do
+      require "teek/mgba/settings_window"
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {})
+      sw.show
+      app.update
+
+      assert_equal '1', app.get_variable(Teek::MGBA::SettingsWindow::VAR_SHOW_FPS)
+    end
+  end
+
+  def test_unchecking_show_fps_fires_callback
+    assert_tk_app("unchecking show fps fires on_show_fps_change") do
+      require "teek/mgba/settings_window"
+      received = nil
+      sw = Teek::MGBA::SettingsWindow.new(app, callbacks: {
+        on_show_fps_change: proc { |show| received = show }
+      })
+      sw.show
+      app.update
+
+      app.command(Teek::MGBA::SettingsWindow::SHOW_FPS_CHECK, 'invoke')
+      app.update
+
+      assert_equal false, received
+    end
+  end
+
   # -- Keyboard mode --------------------------------------------------------
 
   def test_starts_in_keyboard_mode
