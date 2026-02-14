@@ -40,6 +40,7 @@ jobs:
           mingw-w64-ucrt-x86_64-SDL2_ttf \
           mingw-w64-ucrt-x86_64-SDL2_image \
           mingw-w64-ucrt-x86_64-SDL2_mixer \
+          mingw-w64-ucrt-x86_64-SDL2_gfx \
           mingw-w64-ucrt-x86_64-imagemagick
 
     - name: Cache compiled extension
