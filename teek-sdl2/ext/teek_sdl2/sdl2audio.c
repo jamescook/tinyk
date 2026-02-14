@@ -367,6 +367,44 @@ audio_stream_destroyed_p(VALUE self)
     return a->destroyed ? Qtrue : Qfalse;
 }
 
+/*
+ * AudioStream.available? -> Boolean
+ *
+ * Returns true if at least one audio output device is available.
+ * Use this to probe before opening a stream on headless/CI systems.
+ */
+static VALUE
+audio_stream_available_p(VALUE klass)
+{
+    ensure_sdl_audio_init();
+    return SDL_GetNumAudioDevices(0) > 0 ? Qtrue : Qfalse;
+}
+
+/*
+ * AudioStream.device_count -> Integer
+ *
+ * Number of audio output devices detected by SDL2.
+ */
+static VALUE
+audio_stream_device_count(VALUE klass)
+{
+    ensure_sdl_audio_init();
+    return INT2NUM(SDL_GetNumAudioDevices(0));
+}
+
+/*
+ * AudioStream.driver_name -> String or nil
+ *
+ * Name of the current SDL2 audio driver (e.g. "wasapi", "dummy"),
+ * or nil if audio is not initialized.
+ */
+static VALUE
+audio_stream_driver_name(VALUE klass)
+{
+    const char *name = SDL_GetCurrentAudioDriver();
+    return name ? rb_str_new_cstr(name) : Qnil;
+}
+
 /* --------------------------------------------------------- */
 
 void
@@ -388,4 +426,8 @@ Init_sdl2audio(VALUE mTeekSDL2)
     rb_define_method(cAudioStream, "format", audio_stream_format, 0);
     rb_define_method(cAudioStream, "destroy", audio_stream_destroy, 0);
     rb_define_method(cAudioStream, "destroyed?", audio_stream_destroyed_p, 0);
+
+    rb_define_singleton_method(cAudioStream, "available?", audio_stream_available_p, 0);
+    rb_define_singleton_method(cAudioStream, "device_count", audio_stream_device_count, 0);
+    rb_define_singleton_method(cAudioStream, "driver_name", audio_stream_driver_name, 0);
 }

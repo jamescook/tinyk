@@ -77,11 +77,12 @@ module Teek
       }.freeze
 
 
-      def initialize(rom_path = nil)
+      def initialize(rom_path = nil, sound: true)
         @app = Teek::App.new
         @app.interp.thread_timer_ms = 1  # need fast event dispatch for emulation
         @app.show
 
+        @sound = sound
         @config = Teek::MGBA.user_config
         @scale  = @config.scale
         @volume = @config.volume / 100.0
@@ -188,9 +189,16 @@ module Teek
       attr_reader :dead_zone
 
       def run
-        @app.after(1) { init_sdl2 }
+        @sdl2_init_started = false
+        @app.after(1) do
+          @sdl2_init_started = true
+          init_sdl2
+        end
         @app.mainloop
       ensure
+        unless @sdl2_init_started
+          $stderr.puts "FATAL: init_sdl2 callback never fired (event loop exited early)"
+        end
         cleanup
       end
 
@@ -248,13 +256,20 @@ module Teek
           :zero, :one, :add
         )
 
-        # Audio stream — stereo int16 at GBA sample rate
-        @stream = Teek::SDL2::AudioStream.new(
-          frequency: AUDIO_FREQ,
-          format:    :s16,
-          channels:  2
-        )
-        @stream.resume
+        # Audio stream — stereo int16 at GBA sample rate.
+        # Falls back to a silent no-op stream when sound is disabled or
+        # no audio device is available (e.g. CI servers, headless).
+        if @sound && Teek::SDL2::AudioStream.available?
+          @stream = Teek::SDL2::AudioStream.new(
+            frequency: AUDIO_FREQ,
+            format:    :s16,
+            channels:  2
+          )
+          @stream.resume
+        else
+          warn "mGBA Player: no audio device found, continuing without sound" if @sound
+          @stream = Teek::SDL2::NullAudioStream.new
+        end
 
         # Initialize gamepad subsystem for hot-plug detection
         Teek::SDL2::Gamepad.init_subsystem
@@ -275,6 +290,13 @@ module Teek
         @app.update
 
         animate
+      rescue => e
+        # Surface init failures visibly — Tk's event loop can swallow
+        # exceptions from `after` callbacks, causing silent hangs.
+        $stderr.puts "FATAL: init_sdl2 failed: #{e.class}: #{e.message}"
+        $stderr.puts e.backtrace.first(10).map { |l| "  #{l}" }.join("\n")
+        @app.command('tk', 'busy', 'forget', '.') rescue nil
+        @running = false
       end
 
       def show_rom_info

@@ -82,6 +82,36 @@ module Teek
       # @!method destroyed?
       #   Whether the audio stream has been destroyed.
       #   @return [Boolean]
+
+      # @!method self.available?
+      #   Whether at least one audio output device is available.
+      #   @return [Boolean]
+
+      # @!method self.device_count
+      #   Number of audio output devices detected by SDL2.
+      #   @return [Integer]
+
+      # @!method self.driver_name
+      #   Name of the current SDL2 audio driver (e.g. "wasapi", "dummy").
+      #   @return [String, nil]
+    end
+
+    # Null-object stand-in for {AudioStream} when no audio device is
+    # available.  Every method is a silent no-op, so the rest of the
+    # application can call the same API without nil guards.
+    class NullAudioStream
+      def queue(_data)    = nil
+      def queued_bytes    = 0
+      def queued_samples  = 0
+      def resume          = nil
+      def pause           = nil
+      def playing?        = false
+      def clear           = nil
+      def frequency       = 0
+      def channels        = 0
+      def format          = :s16
+      def destroy         = nil
+      def destroyed?      = true
     end
   end
 end
