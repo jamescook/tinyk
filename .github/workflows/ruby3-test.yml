@@ -39,3 +39,21 @@ jobs:
           -e TCL_VERSION=9.0 \
           -e TESTOPTS=-v \
           teek-ci-test-ruby3:latest
+
+    - name: Run SDL2 tests
+      timeout-minutes: 5
+      run: |
+        docker run --rm --init \
+          -e TCL_VERSION=9.0 \
+          -e TESTOPTS=-v \
+          teek-ci-test-ruby3:latest \
+          xvfb-run -a bundle exec rake sdl2:test
+
+    - name: Run mGBA tests
+      timeout-minutes: 5
+      run: |
+        docker run --rm --init \
+          -e TCL_VERSION=9.0 \
+          -e TESTOPTS=-v \
+          teek-ci-test-ruby3:latest \
+          xvfb-run -a bundle exec rake mgba:test

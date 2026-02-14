@@ -247,7 +247,7 @@ class TestMGBASettingsWindow < Minitest::Test
 
       assert_equal :a, sw.listening_for
       text = app.command(Teek::MGBA::SettingsWindow::GP_BTN_A, 'cget', '-text')
-      assert_equal 'A: Press...', text
+      assert_equal "A: Press\u2026", text
     end
   end
 

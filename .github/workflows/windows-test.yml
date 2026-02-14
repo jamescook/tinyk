@@ -41,16 +41,20 @@ jobs:
           mingw-w64-ucrt-x86_64-SDL2_image \
           mingw-w64-ucrt-x86_64-SDL2_mixer \
           mingw-w64-ucrt-x86_64-SDL2_gfx \
+          mingw-w64-ucrt-x86_64-mgba \
           mingw-w64-ucrt-x86_64-imagemagick
 
-    - name: Cache compiled extension
+    - name: Cache compiled extensions
       uses: actions/cache@v4
       with:
-        path: lib/*.so
-        key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'Rakefile', 'Gemfile.lock') }}
+        path: |
+          lib/*.so
+          teek-sdl2/lib/*.so
+          teek-mgba/lib/*.so
+        key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'teek-sdl2/ext/**/*.c', 'teek-sdl2/ext/**/*.h', 'teek-mgba/ext/**/*.c', 'teek-mgba/ext/**/*.h', 'Rakefile', 'Gemfile.lock') }}
 
-    - name: Compile native extension
-      run: bundle exec rake compile
+    - name: Compile native extensions
+      run: bundle exec rake compile compile:teek_sdl2 compile:teek_mgba
 
     - name: Run tests
       timeout-minutes: 5
@@ -60,6 +64,11 @@ jobs:
     - name: Run SDL2 tests
       timeout-minutes: 5
       run: bundle exec rake sdl2:test TESTOPTS="-v"
+      continue-on-error: true
+
+    - name: Run mGBA tests
+      timeout-minutes: 5
+      run: bundle exec rake mgba:test TESTOPTS="-v"
       continue-on-error: true
 
     - name: Upload test results

@@ -2,6 +2,7 @@
 
 require 'fileutils'
 require 'set'
+require_relative 'locale'
 
 module Teek
   module MGBA

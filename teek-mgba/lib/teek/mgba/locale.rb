@@ -67,6 +67,10 @@ module Teek
         File.join(__dir__, 'locales', "#{lang}.yml")
       end
 
+      # Auto-load English on first require so translate() always works,
+      # even when loaded outside the full Teek::MGBA boot path.
+      load('en') unless @strings
+
       # Mixin for classes that need translation access.
       # Include this to call `translate` / `t` as instance methods.
       #

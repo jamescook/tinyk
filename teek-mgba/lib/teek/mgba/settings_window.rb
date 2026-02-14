@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "child_window"
+require_relative "locale"
 
 module Teek
   module MGBA

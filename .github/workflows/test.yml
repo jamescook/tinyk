@@ -84,6 +84,15 @@ jobs:
           teek-ci-test-9:latest \
           xvfb-run -a bundle exec rake sdl2:test 2>&1 | tee sdl2-test-output.log
 
+    - name: Run mGBA tests
+      timeout-minutes: 5
+      run: |
+        docker run --rm --init -t \
+          -e TCL_VERSION=9.0 \
+          -e TESTOPTS=-v \
+          teek-ci-test-9:latest \
+          xvfb-run -a bundle exec rake mgba:test 2>&1 | tee mgba-test-output.log
+
     - name: Upload test log
       if: always()
       uses: actions/upload-artifact@v4
@@ -92,6 +101,7 @@ jobs:
         path: |
           test-output.log
           sdl2-test-output.log
+          mgba-test-output.log
         retention-days: 7
 
     - name: Upload coverage report
@@ -166,6 +176,15 @@ jobs:
           teek-ci-test-8:latest \
           xvfb-run -a bundle exec rake sdl2:test 2>&1 | tee sdl2-test-output.log
 
+    - name: Run mGBA tests
+      timeout-minutes: 5
+      run: |
+        docker run --rm --init -t \
+          -e TCL_VERSION=8.6 \
+          -e TESTOPTS=-v \
+          teek-ci-test-8:latest \
+          xvfb-run -a bundle exec rake mgba:test 2>&1 | tee mgba-test-output.log
+
     - name: Upload test log
       if: always()
       uses: actions/upload-artifact@v4
@@ -174,4 +193,5 @@ jobs:
         path: |
           test-output.log
           sdl2-test-output.log
+          mgba-test-output.log
         retention-days: 7
