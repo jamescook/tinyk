@@ -340,12 +340,8 @@ class TestMGBAPlayer < Minitest::Test
         save_btn = Teek::MGBA::SettingsWindow::SAVE_BTN
         var_slot = Teek::MGBA::SettingsWindow::VAR_QUICK_SLOT
 
-        # Open Settings via File menu (index 3: Open ROM, Recent, sep, Settings...)
-        app.command('.menubar.file', :invoke, 3)
-        app.update
-
-        # Navigate to the Save States tab
-        app.command(nb, 'select', ss_tab)
+        # Open Settings > Save States via the Settings menu (index 3)
+        app.command('.menubar.settings', :invoke, 3)
         app.update
 
         # Verify default slot is 1

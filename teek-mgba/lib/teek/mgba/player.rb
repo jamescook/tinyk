@@ -363,11 +363,11 @@ module Teek
         load_state(@quick_save_slot)
       end
 
-      def show_settings
+      def show_settings(tab: nil)
         @was_paused_before_settings = @paused
         toggle_fast_forward if @fast_forward
         toggle_pause if @core && !@paused
-        @settings_window.show
+        @settings_window.show(tab: tab)
       end
 
       def on_settings_close
@@ -631,15 +631,23 @@ module Teek
 
         @app.command("#{menubar}.file", :add, :separator)
         @app.command("#{menubar}.file", :add, :command,
-                     label: 'Settings...', accelerator: 'Cmd+,',
-                     command: proc { show_settings })
-        @app.command("#{menubar}.file", :add, :separator)
-        @app.command("#{menubar}.file", :add, :command,
                      label: 'Quit', accelerator: 'Cmd+Q',
                      command: proc { @running = false })
 
         @app.command(:bind, '.', '<Command-o>', proc { open_rom_dialog })
         @app.command(:bind, '.', '<Command-comma>', proc { show_settings })
+
+        # Settings menu — one entry per settings tab
+        settings_menu = "#{menubar}.settings"
+        @app.command(:menu, settings_menu, tearoff: 0)
+        @app.command(menubar, :add, :cascade, label: 'Settings', menu: settings_menu)
+
+        SettingsWindow::TABS.each do |label, tab_path|
+          accel = label == 'Video' ? 'Cmd+,' : nil
+          opts = { label: "#{label}...", command: proc { show_settings(tab: tab_path) } }
+          opts[:accelerator] = accel if accel
+          @app.command(settings_menu, :add, :command, **opts)
+        end
 
         # View menu
         view_menu = "#{menubar}.view"

@@ -126,12 +126,22 @@ module Teek
         @keyboard_mode
       end
 
-      def show
+      # @param tab [String, nil] widget path of the tab to select (e.g. SS_TAB)
+      def show(tab: nil)
+        @app.command(NB, 'select', tab) if tab
         @app.command(:wm, 'deiconify', TOP)
         @app.command(:raise, TOP)
         @app.command(:grab, :set, TOP)
         @app.command(:focus, TOP)
       end
+
+      # Tab widget paths keyed by menu-friendly name
+      TABS = {
+        'Video'       => "#{NB}.video",
+        'Audio'       => "#{NB}.audio",
+        'Gamepad'     => GAMEPAD_TAB,
+        'Save States' => SS_TAB,
+      }.freeze
 
       def hide
         @app.command(:grab, :release, TOP)
