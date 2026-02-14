@@ -54,7 +54,7 @@ jobs:
         key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'teek-sdl2/ext/**/*.c', 'teek-sdl2/ext/**/*.h', 'teek-mgba/ext/**/*.c', 'teek-mgba/ext/**/*.h', 'Rakefile', 'Gemfile.lock') }}
 
     - name: Compile native extensions
-      run: bundle exec rake compile sdl2:compile mgba:compile
+      run: bundle exec rake compile sdl2:compile mgba:compile 2>&1 | tee compile-output.log
 
     - name: Run tests
       timeout-minutes: 5
@@ -68,10 +68,12 @@ jobs:
       timeout-minutes: 5
       run: bundle exec rake mgba:test TESTOPTS="-v"
 
-    - name: Upload test results
+    - name: Upload build and test logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-windows-ruby${{ github.event.inputs.ruby_version }}
-        path: coverage/
+        name: windows-logs-ruby${{ github.event.inputs.ruby_version }}
+        path: |
+          compile-output.log
+          teek-mgba/ext/teek_mgba/mkmf.log
         retention-days: 7

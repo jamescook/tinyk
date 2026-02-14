@@ -2,6 +2,61 @@
 
 require 'mkmf'
 
+# Diagnostic dump for CI debugging — written before any search so we can
+# always see what the environment looks like, even when the build fails.
+def dump_mgba_search_diagnostics
+  puts "=" * 60
+  puts "teek-mgba extconf.rb diagnostics"
+  puts "=" * 60
+  puts "RUBY_PLATFORM:            #{RUBY_PLATFORM}"
+  puts "RbConfig host_os:         #{RbConfig::CONFIG['host_os']}"
+  puts "RbConfig prefix:          #{RbConfig::CONFIG['prefix']}"
+  puts "RbConfig sitearchdir:     #{RbConfig::CONFIG['sitearchdir']}"
+  puts "MGBA_DIR env:             #{ENV['MGBA_DIR'].inspect}"
+  puts "PKG_CONFIG_PATH env:      #{ENV['PKG_CONFIG_PATH'].inspect}"
+  puts "PATH (first 3):           #{ENV['PATH']&.split(File::PATH_SEPARATOR)&.first(3)&.join(', ')}"
+
+  # Check common locations for mgba headers/libs
+  candidates = [
+    RbConfig::CONFIG['prefix'],
+    "#{RbConfig::CONFIG['prefix']}/msys64/ucrt64",
+    '/ucrt64',
+    '/usr',
+    '/usr/local',
+    '/opt/homebrew',
+  ]
+
+  candidates.each do |prefix|
+    inc = "#{prefix}/include/mgba/core/core.h"
+    libs = Dir.glob("#{prefix}/lib/*mgba*") rescue []
+    bins = Dir.glob("#{prefix}/bin/*mgba*") rescue []
+    next if !File.exist?(inc) && libs.empty? && bins.empty?
+    puts "\n  #{prefix}/"
+    puts "    header: #{File.exist?(inc) ? 'FOUND' : 'missing'} (#{inc})"
+    puts "    libs:   #{libs.empty? ? 'none' : libs.join(', ')}"
+    puts "    bins:   #{bins.empty? ? 'none' : bins.join(', ')}"
+  end
+
+  # On Windows, also check what pacman says
+  if RbConfig::CONFIG['host_os'] =~ /mingw|mswin/
+    msys2_root = "#{RbConfig::CONFIG['prefix']}/msys64"
+    pacman = "#{msys2_root}/usr/bin/pacman"
+    if File.exist?(pacman)
+      puts "\npacman -Q mgba:"
+      puts `"#{pacman}" -Q 2>&1`.lines.grep(/mgba/i).map { |l| "  #{l}" }.join
+      puts "pacman -Ql mgba (headers/libs only):"
+      ql = `"#{pacman}" -Ql mingw-w64-ucrt-x86_64-mgba 2>&1`
+      puts ql.lines.grep(/\.(h|a|dll|lib|pc)/).first(20).map { |l| "  #{l}" }.join
+    else
+      puts "\npacman not found at #{pacman}"
+    end
+  end
+
+  puts "=" * 60
+end
+
+dump_mgba_search_diagnostics
+
 def add_mgba_deps
   # Common dependencies of libmgba (needed when linking statically)
   $libs << " -lz" unless $libs.include?('-lz')
