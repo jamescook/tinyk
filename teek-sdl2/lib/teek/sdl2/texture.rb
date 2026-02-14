@@ -15,6 +15,8 @@ module Teek
     # - {#update} — upload pixel data from a String
     # - {#width} — texture width in pixels
     # - {#height} — texture height in pixels
+    # - {#blend_mode=} — set the texture blend mode
+    # - {#blend_mode} — get the current blend mode
     # - {#destroy} — free GPU resources
     # - {#destroyed?} — check if the texture has been destroyed
     #
@@ -41,6 +43,33 @@ module Teek
       # @!method destroy
       #   Free this texture's GPU resources.
       #   @return [void]
+
+      # @!method blend_mode=(mode)
+      #   Set the blend mode used when this texture is drawn via {Renderer#copy}.
+      #
+      #   Built-in modes (Symbol):
+      #   - +:none+  — no blending (copy pixels as-is)
+      #   - +:blend+ — alpha blending (default for TTF-rendered textures)
+      #   - +:add+   — additive blending
+      #   - +:mod+   — color modulation
+      #
+      #   Pass an Integer from {SDL2.compose_blend_mode} for custom blend modes.
+      #
+      #   @param mode [Symbol, Integer] blend mode
+      #   @return [Symbol, Integer] the mode that was set
+      #   @see https://wiki.libsdl.org/SDL2/SDL_SetTextureBlendMode SDL_SetTextureBlendMode
+      #
+      #   @example Inverse/invert effect (shows opposite of background)
+      #     inverse = Teek::SDL2.compose_blend_mode(
+      #       :one_minus_dst_color, :one_minus_src_alpha, :add,
+      #       :zero, :one, :add
+      #     )
+      #     white_text = font.render_text("Hello", 255, 255, 255)
+      #     white_text.blend_mode = inverse
+
+      # @!method blend_mode
+      #   @return [Integer] current blend mode
+      #   @see https://wiki.libsdl.org/SDL2/SDL_GetTextureBlendMode SDL_GetTextureBlendMode
 
       # @!method destroyed?
       #   @return [Boolean] whether this texture has been destroyed

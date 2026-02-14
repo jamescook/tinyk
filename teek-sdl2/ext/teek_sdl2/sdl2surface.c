@@ -500,6 +500,128 @@ texture_destroyed_p(VALUE self)
 }
 
 /* ---------------------------------------------------------
+ * Blend factor / operation helpers
+ * --------------------------------------------------------- */
+
+static SDL_BlendFactor
+sym_to_blend_factor(VALUE sym)
+{
+    ID id = SYM2ID(sym);
+    if (id == rb_intern("zero"))                return SDL_BLENDFACTOR_ZERO;
+    if (id == rb_intern("one"))                 return SDL_BLENDFACTOR_ONE;
+    if (id == rb_intern("src_color"))           return SDL_BLENDFACTOR_SRC_COLOR;
+    if (id == rb_intern("one_minus_src_color")) return SDL_BLENDFACTOR_ONE_MINUS_SRC_COLOR;
+    if (id == rb_intern("src_alpha"))           return SDL_BLENDFACTOR_SRC_ALPHA;
+    if (id == rb_intern("one_minus_src_alpha")) return SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    if (id == rb_intern("dst_color"))           return SDL_BLENDFACTOR_DST_COLOR;
+    if (id == rb_intern("one_minus_dst_color")) return SDL_BLENDFACTOR_ONE_MINUS_DST_COLOR;
+    if (id == rb_intern("dst_alpha"))           return SDL_BLENDFACTOR_DST_ALPHA;
+    if (id == rb_intern("one_minus_dst_alpha")) return SDL_BLENDFACTOR_ONE_MINUS_DST_ALPHA;
+    rb_raise(rb_eArgError,
+             "unknown blend factor (use :zero, :one, :src_color, "
+             ":one_minus_src_color, :src_alpha, :one_minus_src_alpha, "
+             ":dst_color, :one_minus_dst_color, :dst_alpha, :one_minus_dst_alpha)");
+    return 0; /* unreachable */
+}
+
+static SDL_BlendOperation
+sym_to_blend_operation(VALUE sym)
+{
+    ID id = SYM2ID(sym);
+    if (id == rb_intern("add"))              return SDL_BLENDOPERATION_ADD;
+    if (id == rb_intern("subtract"))         return SDL_BLENDOPERATION_SUBTRACT;
+    if (id == rb_intern("rev_subtract"))     return SDL_BLENDOPERATION_REV_SUBTRACT;
+    if (id == rb_intern("minimum"))          return SDL_BLENDOPERATION_MINIMUM;
+    if (id == rb_intern("maximum"))          return SDL_BLENDOPERATION_MAXIMUM;
+    rb_raise(rb_eArgError,
+             "unknown blend operation (use :add, :subtract, :rev_subtract, "
+             ":minimum, :maximum)");
+    return 0; /* unreachable */
+}
+
+/*
+ * Teek::SDL2::Texture#blend_mode=(mode)
+ *
+ * Sets the texture blend mode. mode can be a Symbol for built-in
+ * modes or an Integer from compose_blend_mode for custom modes:
+ *   :none  - no blending
+ *   :blend - alpha blending (default for TTF textures)
+ *   :add   - additive blending
+ *   :mod   - color modulate
+ *   Integer - custom blend mode from Teek::SDL2.compose_blend_mode
+ */
+static VALUE
+texture_set_blend_mode(VALUE self, VALUE mode)
+{
+    struct sdl2_texture *t = get_texture(self);
+    SDL_BlendMode bm;
+
+    if (FIXNUM_P(mode)) {
+        bm = (SDL_BlendMode)NUM2INT(mode);
+    } else if (SYMBOL_P(mode)) {
+        ID id = SYM2ID(mode);
+        if (id == rb_intern("none"))       bm = SDL_BLENDMODE_NONE;
+        else if (id == rb_intern("blend")) bm = SDL_BLENDMODE_BLEND;
+        else if (id == rb_intern("add"))   bm = SDL_BLENDMODE_ADD;
+        else if (id == rb_intern("mod"))   bm = SDL_BLENDMODE_MOD;
+        else rb_raise(rb_eArgError, "unknown blend mode (use :none, :blend, :add, :mod, or Integer)");
+    } else {
+        rb_raise(rb_eTypeError, "expected Symbol or Integer for blend_mode");
+    }
+
+    if (SDL_SetTextureBlendMode(t->texture, bm) != 0) {
+        rb_raise(eSDL2Error, "SDL_SetTextureBlendMode: %s", SDL_GetError());
+    }
+    return mode;
+}
+
+/*
+ * Teek::SDL2::Texture#blend_mode -> Integer
+ *
+ * Returns the current blend mode as an integer.
+ */
+static VALUE
+texture_get_blend_mode(VALUE self)
+{
+    struct sdl2_texture *t = get_texture(self);
+    SDL_BlendMode bm;
+
+    if (SDL_GetTextureBlendMode(t->texture, &bm) != 0) {
+        rb_raise(eSDL2Error, "SDL_GetTextureBlendMode: %s", SDL_GetError());
+    }
+    return INT2NUM((int)bm);
+}
+
+/*
+ * Teek::SDL2.compose_blend_mode(src_color, dst_color, color_op,
+ *                                src_alpha, dst_alpha, alpha_op) -> Integer
+ *
+ * Creates a custom blend mode via SDL_ComposeCustomBlendMode.
+ * Returns an Integer suitable for Texture#blend_mode=.
+ *
+ * Factors: :zero, :one, :src_color, :one_minus_src_color,
+ *   :src_alpha, :one_minus_src_alpha, :dst_color,
+ *   :one_minus_dst_color, :dst_alpha, :one_minus_dst_alpha
+ *
+ * Operations: :add, :subtract, :rev_subtract, :minimum, :maximum
+ */
+static VALUE
+sdl2_compose_blend_mode(VALUE self,
+                        VALUE src_color, VALUE dst_color, VALUE color_op,
+                        VALUE src_alpha, VALUE dst_alpha, VALUE alpha_op)
+{
+    SDL_BlendMode bm = SDL_ComposeCustomBlendMode(
+        sym_to_blend_factor(src_color),
+        sym_to_blend_factor(dst_color),
+        sym_to_blend_operation(color_op),
+        sym_to_blend_factor(src_alpha),
+        sym_to_blend_factor(dst_alpha),
+        sym_to_blend_operation(alpha_op)
+    );
+    return INT2NUM((int)bm);
+}
+
+/* ---------------------------------------------------------
  * Init
  * --------------------------------------------------------- */
 
@@ -529,6 +651,11 @@ Init_sdl2surface(VALUE mTeekSDL2)
     rb_define_method(cTexture, "update", texture_update, 1);
     rb_define_method(cTexture, "width", texture_width, 0);
     rb_define_method(cTexture, "height", texture_height, 0);
+    rb_define_method(cTexture, "blend_mode=", texture_set_blend_mode, 1);
+    rb_define_method(cTexture, "blend_mode", texture_get_blend_mode, 0);
     rb_define_method(cTexture, "destroy", texture_destroy, 0);
     rb_define_method(cTexture, "destroyed?", texture_destroyed_p, 0);
+
+    /* Module-level blend mode composition */
+    rb_define_module_function(mTeekSDL2, "compose_blend_mode", sdl2_compose_blend_mode, 6);
 }

@@ -112,6 +112,50 @@ module Teek
 
     # @!endgroup
 
+    # @!group Blending (C-defined module functions)
+
+    # @!method self.compose_blend_mode(src_color_factor, dst_color_factor, color_op, src_alpha_factor, dst_alpha_factor, alpha_op)
+    #   Create a custom blend mode for use with {Texture#blend_mode=}.
+    #
+    #   The blend equations are:
+    #     dstRGB = color_op(srcRGB * src_color_factor, dstRGB * dst_color_factor)
+    #     dstA   = alpha_op(srcA   * src_alpha_factor, dstA   * dst_alpha_factor)
+    #
+    #   Factors (Symbol):
+    #   - +:zero+, +:one+
+    #   - +:src_color+, +:one_minus_src_color+
+    #   - +:src_alpha+, +:one_minus_src_alpha+
+    #   - +:dst_color+, +:one_minus_dst_color+
+    #   - +:dst_alpha+, +:one_minus_dst_alpha+
+    #
+    #   Operations (Symbol):
+    #   - +:add+ — +src + dst+ (all renderers)
+    #   - +:subtract+ — +src - dst+
+    #   - +:rev_subtract+ — +dst - src+
+    #   - +:minimum+ — +min(src, dst)+
+    #   - +:maximum+ — +max(src, dst)+
+    #
+    #   @param src_color_factor [Symbol] multiplier for source RGB
+    #   @param dst_color_factor [Symbol] multiplier for destination RGB
+    #   @param color_op [Symbol] operation combining color components
+    #   @param src_alpha_factor [Symbol] multiplier for source alpha
+    #   @param dst_alpha_factor [Symbol] multiplier for destination alpha
+    #   @param alpha_op [Symbol] operation combining alpha components
+    #   @return [Integer] opaque blend mode ID for {Texture#blend_mode=}
+    #   @see https://wiki.libsdl.org/SDL2/SDL_ComposeCustomBlendMode SDL_ComposeCustomBlendMode
+    #   @see https://wiki.libsdl.org/SDL2/SDL_BlendFactor SDL_BlendFactor
+    #   @see https://wiki.libsdl.org/SDL2/SDL_BlendOperation SDL_BlendOperation
+    #
+    #   @example Inverse/invert effect (text shows opposite of background)
+    #     inverse = Teek::SDL2.compose_blend_mode(
+    #       :one_minus_dst_color, :one_minus_src_alpha, :add,
+    #       :zero, :one, :add
+    #     )
+    #     white_text = font.render_text("Hello", 255, 255, 255)
+    #     white_text.blend_mode = inverse
+
+    # @!endgroup
+
     @event_source = nil
 
     # Register SDL2 as a Tcl event source. Called automatically when the

@@ -201,6 +201,15 @@ module Teek
         @fps_tex = nil
         @fps_shadow_tex = nil
 
+        # Custom blend mode: white text inverts the background behind it.
+        # dstRGB = (1 - dstRGB) * srcRGB + dstRGB * (1 - srcA)
+        # Where srcA=1 (opaque text): result = 1 - dst  (inverted)
+        # Where srcA=0 (transparent): result = dst      (unchanged)
+        @inverse_blend = Teek::SDL2.compose_blend_mode(
+          :one_minus_dst_color, :one_minus_src_alpha, :add,
+          :zero, :one, :add
+        )
+
         # Audio stream — stereo int16 at GBA sample rate
         @stream = Teek::SDL2::AudioStream.new(
           frequency: AUDIO_FREQ,
@@ -576,31 +585,43 @@ module Teek
         @app.set_variable(SettingsWindow::VAR_SHOW_FPS, @show_fps ? '1' : '0')
       end
 
+      # Build an inverse-blend overlay texture from text. White source
+      # pixels invert the destination, transparent regions pass through.
+      def build_inverse_tex(text)
+        return nil unless @overlay_font
+        tex = @overlay_font.render_text(text, 255, 255, 255)
+        tex.blend_mode = @inverse_blend
+        tex
+      end
+
+      # Draw an inverse overlay texture at (x, y), cropping the font's
+      # descender area (bottom ~20%) which has alpha artifacts.
+      def draw_inverse_tex(r, tex, x, y)
+        return unless tex
+        tw = tex.width
+        th = (tex.height * 0.8).to_i
+        r.copy(tex, [0, 0, tw, th], [x, y, tw, th])
+      end
+
       def rebuild_fps_overlay(text)
         destroy_fps_overlay
-        return unless @overlay_font
-        @fps_tex = @overlay_font.render_text(text, 0, 255, 0)
-        @fps_shadow_tex = @overlay_font.render_text(text, 0, 0, 0)
+        @fps_tex = build_inverse_tex(text)
       end
 
       def destroy_fps_overlay
         @fps_tex&.destroy
         @fps_tex = nil
-        @fps_shadow_tex&.destroy
-        @fps_shadow_tex = nil
       end
 
       def rebuild_ff_label
         destroy_ff_label
         label = @turbo_speed == 0 ? '>> MAX' : ">> #{@turbo_speed}x"
-        @ff_label_tex = @overlay_font.render_text(label, 255, 255, 0)
+        @ff_label_tex = build_inverse_tex(label)
       end
 
       def destroy_ff_label
-        if @ff_label_tex
-          @ff_label_tex.destroy
-          @ff_label_tex = nil
-        end
+        @ff_label_tex&.destroy
+        @ff_label_tex = nil
       end
 
       def reset_core
@@ -829,28 +850,20 @@ module Teek
         @viewport.render do |r|
           r.clear(0, 0, 0)
           r.copy(@texture, nil, dest)
-          if ff_indicator && @ff_label_tex
-            ox = dest ? dest[0] : 0
-            oy = dest ? dest[1] : 0
-            r.copy(@ff_label_tex, nil, [ox + 4, oy + 4, @ff_label_tex.width, @ff_label_tex.height])
-          end
+          ox = dest ? dest[0] : 0
+          oy = dest ? dest[1] : 0
+          draw_inverse_tex(r, @ff_label_tex, ox + 4, oy + 4) if ff_indicator
           draw_fps_overlay(r, dest)
         end
       end
 
-      # Draw FPS counter in top-right of game area with thick black outline
-      # for contrast — readable against any background. Uses 2px offsets in
-      # 8 directions so the outline is visible on HiDPI/Retina displays.
-      OUTLINE_OFFSETS = [[-2,0],[2,0],[0,-2],[0,2],[-1,-1],[-1,1],[1,-1],[1,1]].freeze
-
       def draw_fps_overlay(r, dest)
         return unless @show_fps && @fps_tex
-        fx = (dest ? dest[0] + dest[2] : r.output_size[0]) - @fps_tex.width - 6
+        tw = @fps_tex.width
+        th = (@fps_tex.height * 0.8).to_i
+        fx = (dest ? dest[0] + dest[2] : r.output_size[0]) - tw - 6
         fy = (dest ? dest[1] : 0) + 4
-        sw = @fps_shadow_tex.width
-        sh = @fps_shadow_tex.height
-        OUTLINE_OFFSETS.each { |dx, dy| r.copy(@fps_shadow_tex, nil, [fx + dx, fy + dy, sw, sh]) }
-        r.copy(@fps_tex, nil, [fx, fy, @fps_tex.width, @fps_tex.height])
+        draw_inverse_tex(r, @fps_tex, fx, fy)
       end
 
       # Calculate a centered destination rectangle that preserves the GBA's 3:2
