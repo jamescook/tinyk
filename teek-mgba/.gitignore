@@ -3,5 +3,7 @@ vendor/
 *.so
 *.o
 *.log
+*.def
 *.dSYM
+Makefile
 tmp/

@@ -2,6 +2,14 @@
 
 require 'mkmf'
 
+# On Windows (MinGW/UCRT), Ruby's win32.h and mingw-w64's sys/time.h both
+# declare gettimeofday() with incompatible signatures.  Defining this guard
+# suppresses mingw-w64's declaration so Ruby's is the only one in scope.
+# See: https://github.com/rake-compiler/rake-compiler-dock/issues/32
+if RbConfig::CONFIG['host_os'] =~ /mingw|mswin/
+  $CPPFLAGS << ' -D_GETTIMEOFDAY_DEFINED'
+end
+
 # Diagnostic dump for CI debugging — written before any search so we can
 # always see what the environment looks like, even when the build fails.
 def dump_mgba_search_diagnostics
