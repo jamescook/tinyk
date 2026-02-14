@@ -265,9 +265,14 @@ mgba_core_video_buffer_argb(VALUE self)
 
     for (long i = 0; i < npixels; i++) {
         uint32_t px = src[i];
-        /* Swap R (bits 0-7) and B (bits 16-23), keep A and G */
-        dst[i] = (px & 0xFF00FF00)
+        /* mGBA native color_t is mCOLOR_XBGR8 (0xXXBBGGRR) — the high
+         * byte is unused padding, not alpha. Force it to 0xFF so
+         * consumers that interpret byte 3 as alpha (Tk photo, PNG)
+         * don't get transparent pixels.
+         * Ref: https://github.com/mgba-emu/mgba/blob/c30aaa8f42b5b786924d955630b29cd990176968/include/mgba-util/image.h#L62 */
+        dst[i] = 0xFF000000
                | ((px & 0x000000FF) << 16)
+               | (px & 0x0000FF00)
                | ((px & 0x00FF0000) >> 16);
     }
     return str;

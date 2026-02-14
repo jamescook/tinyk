@@ -132,11 +132,12 @@ class TestMGBACore < Minitest::Test
     raw  = @core.video_buffer.unpack('V*')
     argb = @core.video_buffer_argb.unpack('V*')
     assert_equal raw.size, argb.size
-    # Verify R↔B swap for first non-zero pixel
+    # Verify R↔B swap + forced opaque alpha for first non-zero pixel
     idx = raw.index { |px| px != 0 } || 0
     px = raw[idx]
-    expected = (px & 0xFF00FF00) |
+    expected = 0xFF000000 |
                ((px & 0x000000FF) << 16) |
+               (px & 0x0000FF00) |
                ((px & 0x00FF0000) >> 16)
     assert_equal expected, argb[idx]
   end

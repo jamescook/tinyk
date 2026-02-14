@@ -279,6 +279,7 @@ module Teek
         return unless @core && !@core.destroyed?
         return bell if @modal_child
         @modal_child = :rom_info
+        enter_modal
         saves = @config.saves_dir
         sav_name = File.basename(@rom_path, File.extname(@rom_path)) + '.sav'
         sav_path = File.join(saves, sav_name)
@@ -373,12 +374,16 @@ module Teek
         load_state(@quick_save_slot)
       end
 
+      MODAL_LABELS = {
+        settings: 'Settings',
+        picker: 'Save States',
+        rom_info: 'ROM Info',
+      }.freeze
+
       def show_settings(tab: nil)
         return bell if @modal_child
         @modal_child = :settings
-        @was_paused_before_modal = @paused
-        toggle_fast_forward if @fast_forward
-        toggle_pause if @core && !@paused
+        enter_modal
         @settings_window.show(tab: tab)
       end
 
@@ -386,15 +391,22 @@ module Teek
         return unless @core && !@core.destroyed? && @state_dir
         return bell if @modal_child
         @modal_child = :picker
-        @was_paused_before_modal = @paused
-        toggle_fast_forward if @fast_forward
-        toggle_pause if @core && !@paused
+        enter_modal
         @state_picker.show(state_dir: @state_dir, quick_slot: @quick_save_slot)
       end
 
       def on_child_window_close
+        destroy_toast
         toggle_pause if @core && !@was_paused_before_modal
         @modal_child = nil
+      end
+
+      def enter_modal
+        @was_paused_before_modal = @paused
+        toggle_fast_forward if @fast_forward
+        toggle_pause if @core && !@paused
+        label = MODAL_LABELS[@modal_child] || @modal_child.to_s
+        show_toast("Waiting for #{label}\u2026", permanent: true)
       end
 
       def bell
@@ -804,14 +816,17 @@ module Teek
       TOAST_PAD_Y = 8
       TOAST_RADIUS = 8
 
-      # Show a brief GBA-style dialog box notification at the bottom of the
+      # Show a GBA-style dialog box notification at the bottom of the
       # game viewport. One toast at a time; new toasts replace the old one.
       # The background is pre-rendered in C with anti-aliased rounded corners.
-      def show_toast(message, duration: nil)
+      #
+      # @param message [String]
+      # @param duration [Float, nil] seconds to display; nil = use config default
+      # @param permanent [Boolean] if true, stays until explicitly destroyed
+      def show_toast(message, duration: nil, permanent: false)
         destroy_toast
         return unless @overlay_font
 
-        duration ||= @config.toast_duration
         @toast_text_tex = @overlay_font.render_text(message, 255, 255, 255)
         tw = @toast_text_tex.width
         th = @overlay_crop_h || @toast_text_tex.height
@@ -829,16 +844,19 @@ module Teek
         @toast_box_h = box_h
         @toast_text_w = tw
         @toast_text_h = th
-        @toast_expires = Process.clock_gettime(Process::CLOCK_MONOTONIC) + duration
+        @toast_permanent = permanent
+        @toast_expires = permanent ? nil : Process.clock_gettime(Process::CLOCK_MONOTONIC) + (duration || @config.toast_duration)
       end
 
       # Draw the current toast centered at the bottom of the game area.
       def draw_toast(r, dest)
         return unless @toast_bg_tex
-        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        if now >= @toast_expires
-          destroy_toast
-          return
+        unless @toast_permanent
+          now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          if now >= @toast_expires
+            destroy_toast
+            return
+          end
         end
 
         # Position: bottom-center of game area, 12px from bottom
