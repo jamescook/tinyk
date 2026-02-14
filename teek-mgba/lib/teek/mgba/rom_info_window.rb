@@ -10,6 +10,7 @@ module Teek
     # grid of labels: field name on the left, value on the right.
     class RomInfoWindow
       include ChildWindow
+      include Locale::Translatable
 
       TOP = ".mgba_rom_info"
 
@@ -261,7 +262,7 @@ module Teek
       private
 
       def build_ui
-        build_toplevel('ROM Info') do
+        build_toplevel(translate('rom_info.title')) do
           build_fields
         end
         @built = true
@@ -276,22 +277,22 @@ module Teek
         rows = %w[title game_code publisher platform rom_size checksum
                    rom_path save_path resolution]
         labels = {
-          'title'      => 'Title',
-          'game_code'  => 'Game Code',
-          'publisher'  => 'Publisher',
-          'platform'   => 'Platform',
-          'rom_size'   => 'ROM Size',
-          'checksum'   => 'Checksum',
-          'rom_path'   => 'ROM File',
-          'save_path'  => 'Save File',
-          'resolution' => 'Resolution',
+          'title'      => translate('rom_info.field_title'),
+          'game_code'  => translate('rom_info.game_code'),
+          'publisher'  => translate('rom_info.publisher'),
+          'platform'   => translate('rom_info.platform'),
+          'rom_size'   => translate('rom_info.rom_size'),
+          'checksum'   => translate('rom_info.checksum'),
+          'rom_path'   => translate('rom_info.rom_file'),
+          'save_path'  => translate('rom_info.save_file'),
+          'resolution' => translate('rom_info.resolution'),
         }
 
         rows.each_with_index do |key, i|
           lbl = "#{frame}.lbl_#{key}"
           val = "#{frame}.val_#{key}"
 
-          @app.command('ttk::label', lbl, text: "#{labels[key]}:", anchor: :e, width: 12)
+          @app.command('ttk::label', lbl, text: labels[key], anchor: :e, width: 12)
           @app.command(:grid, lbl, row: i, column: 0, sticky: :e, padx: [0, 8], pady: 3)
 
           @app.command('ttk::label', val, text: '', anchor: :w)
@@ -302,7 +303,7 @@ module Teek
 
         # Close button
         btn = "#{frame}.close_btn"
-        @app.command('ttk::button', btn, text: 'Close', command: proc { hide })
+        @app.command('ttk::button', btn, text: translate('rom_info.close'), command: proc { hide })
         @app.command(:grid, btn, row: rows.size, column: 0, columnspan: 2, pady: [12, 0])
       end
 
@@ -313,17 +314,18 @@ module Teek
         set_field('game_code', game_code)
 
         maker = core.maker_code
-        publisher = maker.empty? ? 'N/A' : "#{self.class.publisher_name(maker)} (#{maker})"
+        na = translate('rom_info.na')
+        publisher = maker.empty? ? na : "#{self.class.publisher_name(maker)} (#{maker})"
         set_field('publisher', publisher)
 
         set_field('platform', core.platform)
         set_field('rom_size', format_size(core.rom_size))
         set_field('checksum', "0x%08X" % core.checksum)
-        set_field('rom_path', rom_path || 'N/A')
-        set_field('save_path', save_path || 'N/A')
+        set_field('rom_path', rom_path || na)
+        set_field('save_path', save_path || na)
         set_field('resolution', "#{core.width}x#{core.height}")
 
-        @app.command(:wm, 'title', TOP, "ROM Info \u2014 #{core.title}")
+        @app.command(:wm, 'title', TOP, "#{translate('rom_info.title')} \u2014 #{core.title}")
       end
 
       def set_field(key, value)

@@ -526,6 +526,27 @@ class TestMGBAConfig < Minitest::Test
     refute c2.save_state_backup?
   end
 
+  # -- Locale --------------------------------------------------------------
+
+  def test_defaults_locale
+    assert_equal 'auto', new_config.locale
+  end
+
+  def test_set_locale
+    c = new_config
+    c.locale = 'ja'
+    assert_equal 'ja', c.locale
+  end
+
+  def test_round_trip_locale
+    c = new_config
+    c.locale = 'ja'
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_equal 'ja', c2.locale
+  end
+
   # -- Edge cases -----------------------------------------------------------
 
   def test_corrupt_json_falls_back_to_defaults

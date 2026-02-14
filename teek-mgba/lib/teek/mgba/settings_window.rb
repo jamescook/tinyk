@@ -15,6 +15,7 @@ module Teek
     # generate event, assert result).
     class SettingsWindow
       include ChildWindow
+      include Locale::Translatable
 
       TOP = ".mgba_settings"
       NB  = "#{TOP}.nb"
@@ -106,7 +107,7 @@ module Teek
         @keyboard_mode = true
         @gp_labels = DEFAULT_KB_LABELS.dup
 
-        build_toplevel('Settings', geometry: '700x390') { setup_ui }
+        build_toplevel(translate('menu.settings'), geometry: '700x390') { setup_ui }
       end
 
       # @return [Symbol, nil] the GBA button currently listening for remap, or nil
@@ -123,12 +124,12 @@ module Teek
         show_window
       end
 
-      # Tab widget paths keyed by menu-friendly name
+      # Tab widget paths keyed by locale key (caller uses translate to get display name)
       TABS = {
-        'Video'       => "#{NB}.video",
-        'Audio'       => "#{NB}.audio",
-        'Gamepad'     => GAMEPAD_TAB,
-        'Save States' => SS_TAB,
+        'settings.video'       => "#{NB}.video",
+        'settings.audio'       => "#{NB}.audio",
+        'settings.gamepad'     => GAMEPAD_TAB,
+        'settings.save_states' => SS_TAB,
       }.freeze
 
       def hide
@@ -166,7 +167,7 @@ module Teek
         setup_save_states_tab
 
         # Save button — disabled until a setting changes
-        @app.command('ttk::button', SAVE_BTN, text: 'Save', state: :disabled,
+        @app.command('ttk::button', SAVE_BTN, text: translate('settings.save'), state: :disabled,
           command: proc { do_save })
         @app.command(:pack, SAVE_BTN, side: :bottom, pady: [0, 8])
       end
@@ -174,14 +175,14 @@ module Teek
       def setup_video_tab
         frame = "#{NB}.video"
         @app.command('ttk::frame', frame)
-        @app.command(NB, 'add', frame, text: 'Video')
+        @app.command(NB, 'add', frame, text: translate('settings.video'))
 
         # Window Scale
         row = "#{frame}.scale_row"
         @app.command('ttk::frame', row)
         @app.command(:pack, row, fill: :x, padx: 10, pady: [15, 5])
 
-        @app.command('ttk::label', "#{row}.lbl", text: 'Window Scale:')
+        @app.command('ttk::label', "#{row}.lbl", text: translate('settings.window_scale'))
         @app.command(:pack, "#{row}.lbl", side: :left)
 
         @app.set_variable(VAR_SCALE, '3x')
@@ -207,13 +208,13 @@ module Teek
         @app.command('ttk::frame', turbo_row)
         @app.command(:pack, turbo_row, fill: :x, padx: 10, pady: 5)
 
-        @app.command('ttk::label', "#{turbo_row}.lbl", text: 'Turbo Speed:')
+        @app.command('ttk::label', "#{turbo_row}.lbl", text: translate('settings.turbo_speed'))
         @app.command(:pack, "#{turbo_row}.lbl", side: :left)
 
         @app.set_variable(VAR_TURBO, '2x')
         @app.command('ttk::combobox', TURBO_COMBO,
           textvariable: VAR_TURBO,
-          values: Teek.make_list('2x', '3x', '4x', 'Uncapped'),
+          values: Teek.make_list('2x', '3x', '4x', translate('settings.uncapped')),
           state: :readonly,
           width: 10)
         @app.command(:pack, TURBO_COMBO, side: :right)
@@ -221,7 +222,7 @@ module Teek
         @app.command(:bind, TURBO_COMBO, '<<ComboboxSelected>>',
           proc { |*|
             val = @app.get_variable(VAR_TURBO)
-            speed = val == 'Uncapped' ? 0 : val.to_i
+            speed = val == translate('settings.uncapped') ? 0 : val.to_i
             @callbacks[:on_turbo_speed_change]&.call(speed)
             mark_dirty
           })
@@ -233,7 +234,7 @@ module Teek
 
         @app.set_variable(VAR_ASPECT_RATIO, '1')
         @app.command('ttk::checkbutton', ASPECT_CHECK,
-          text: 'Maintain aspect ratio',
+          text: translate('settings.maintain_aspect'),
           variable: VAR_ASPECT_RATIO,
           command: proc { |*|
             keep = @app.get_variable(VAR_ASPECT_RATIO) == '1'
@@ -249,7 +250,7 @@ module Teek
 
         @app.set_variable(VAR_SHOW_FPS, '1')
         @app.command('ttk::checkbutton', SHOW_FPS_CHECK,
-          text: 'Show FPS',
+          text: translate('settings.show_fps'),
           variable: VAR_SHOW_FPS,
           command: proc { |*|
             show = @app.get_variable(VAR_SHOW_FPS) == '1'
@@ -263,7 +264,7 @@ module Teek
         @app.command('ttk::frame', toast_row)
         @app.command(:pack, toast_row, fill: :x, padx: 10, pady: 5)
 
-        @app.command('ttk::label', "#{toast_row}.lbl", text: 'Toast Duration:')
+        @app.command('ttk::label', "#{toast_row}.lbl", text: translate('settings.toast_duration'))
         @app.command(:pack, "#{toast_row}.lbl", side: :left)
 
         @app.set_variable(VAR_TOAST_DURATION, '1.5s')
@@ -288,14 +289,14 @@ module Teek
       def setup_audio_tab
         frame = "#{NB}.audio"
         @app.command('ttk::frame', frame)
-        @app.command(NB, 'add', frame, text: 'Audio')
+        @app.command(NB, 'add', frame, text: translate('settings.audio'))
 
         # Volume slider
         vol_row = "#{frame}.vol_row"
         @app.command('ttk::frame', vol_row)
         @app.command(:pack, vol_row, fill: :x, padx: 10, pady: [15, 5])
 
-        @app.command('ttk::label', "#{vol_row}.lbl", text: 'Volume:')
+        @app.command('ttk::label', "#{vol_row}.lbl", text: translate('settings.volume'))
         @app.command(:pack, "#{vol_row}.lbl", side: :left)
 
         @vol_val_label = "#{vol_row}.vol_label"
@@ -324,7 +325,7 @@ module Teek
 
         @app.set_variable(VAR_MUTE, '0')
         @app.command('ttk::checkbutton', MUTE_CHECK,
-          text: 'Mute',
+          text: translate('settings.mute'),
           variable: VAR_MUTE,
           command: proc { |*|
             muted = @app.get_variable(VAR_MUTE) == '1'
@@ -336,22 +337,22 @@ module Teek
       def setup_gamepad_tab
         frame = GAMEPAD_TAB
         @app.command('ttk::frame', frame)
-        @app.command(NB, 'add', frame, text: 'Gamepad')
+        @app.command(NB, 'add', frame, text: translate('settings.gamepad'))
 
         # Gamepad selector row
         gp_row = "#{frame}.gp_row"
         @app.command('ttk::frame', gp_row)
         @app.command(:pack, gp_row, fill: :x, padx: 10, pady: [8, 4])
 
-        @app.command('ttk::label', "#{gp_row}.lbl", text: 'Gamepad:')
+        @app.command('ttk::label', "#{gp_row}.lbl", text: translate('settings.gamepad') + ':')
         @app.command(:pack, "#{gp_row}.lbl", side: :left)
 
-        @app.set_variable(VAR_GAMEPAD, 'Keyboard Only')
+        @app.set_variable(VAR_GAMEPAD, translate('settings.keyboard_only'))
         @app.command('ttk::combobox', GAMEPAD_COMBO,
           textvariable: VAR_GAMEPAD, state: :readonly, width: 20)
         @app.command(:pack, GAMEPAD_COMBO, side: :left, padx: 4)
         @app.command(GAMEPAD_COMBO, 'configure',
-          values: Teek.make_list('Keyboard Only'))
+          values: Teek.make_list(translate('settings.keyboard_only')))
 
         @app.command(:bind, GAMEPAD_COMBO, '<<ComboboxSelected>>',
           proc { |*| switch_input_mode })
@@ -410,11 +411,11 @@ module Teek
         @app.command('ttk::frame', btn_bar)
         @app.command(:pack, btn_bar, fill: :x, side: :bottom, padx: 10, pady: [4, 8])
 
-        @app.command('ttk::button', GP_UNDO_BTN, text: 'Undo',
+        @app.command('ttk::button', GP_UNDO_BTN, text: translate('settings.undo'),
           state: :disabled, command: proc { do_undo_gamepad })
         @app.command(:pack, GP_UNDO_BTN, side: :left)
 
-        @app.command('ttk::button', GP_RESET_BTN, text: 'Reset to Defaults',
+        @app.command('ttk::button', GP_RESET_BTN, text: translate('settings.reset_defaults'),
           command: proc { confirm_reset_gamepad })
         @app.command(:pack, GP_RESET_BTN, side: :right)
 
@@ -423,7 +424,7 @@ module Teek
         @app.command('ttk::frame', dz_row)
         @app.command(:pack, dz_row, fill: :x, padx: 10, pady: [4, 8], side: :bottom)
 
-        @app.command('ttk::label', "#{dz_row}.lbl", text: 'Dead zone:')
+        @app.command('ttk::label', "#{dz_row}.lbl", text: translate('settings.dead_zone'))
         @app.command(:pack, "#{dz_row}.lbl", side: :left)
 
         @dz_val_label = "#{dz_row}.dz_label"
@@ -450,14 +451,14 @@ module Teek
       def setup_save_states_tab
         frame = SS_TAB
         @app.command('ttk::frame', frame)
-        @app.command(NB, 'add', frame, text: 'Save States')
+        @app.command(NB, 'add', frame, text: translate('settings.save_states'))
 
         # Quick Save Slot
         slot_row = "#{frame}.slot_row"
         @app.command('ttk::frame', slot_row)
         @app.command(:pack, slot_row, fill: :x, padx: 10, pady: [15, 5])
 
-        @app.command('ttk::label', "#{slot_row}.lbl", text: 'Quick Save Slot:')
+        @app.command('ttk::label', "#{slot_row}.lbl", text: translate('settings.quick_save_slot'))
         @app.command(:pack, "#{slot_row}.lbl", side: :left)
 
         slot_values = (1..10).map(&:to_s)
@@ -485,7 +486,7 @@ module Teek
 
         @app.set_variable(VAR_SS_BACKUP, '1')
         @app.command('ttk::checkbutton', SS_BACKUP_CHECK,
-          text: 'Keep backup of previous save state',
+          text: translate('settings.keep_backup'),
           variable: VAR_SS_BACKUP,
           command: proc { |*|
             enabled = @app.get_variable(VAR_SS_BACKUP) == '1'
@@ -511,8 +512,8 @@ module Teek
         cancel_listening
         result = @app.command('tk_messageBox',
           parent: TOP,
-          title: 'Reset Gamepad',
-          message: 'Reset all gamepad mappings and dead zone to defaults?',
+          title: translate('dialog.reset_gamepad_title'),
+          message: translate('dialog.reset_gamepad_msg'),
           type: :yesno,
           icon: :question)
         reset_gamepad_defaults if result == 'yes'
@@ -541,7 +542,7 @@ module Teek
       def switch_input_mode
         cancel_listening
         selected = @app.get_variable(VAR_GAMEPAD)
-        @keyboard_mode = (selected == 'Keyboard Only')
+        @keyboard_mode = (selected == translate('settings.keyboard_only'))
 
         if @keyboard_mode
           @gp_labels = DEFAULT_KB_LABELS.dup
@@ -570,7 +571,7 @@ module Teek
         cancel_listening
         @listening_for = gba_btn
         widget = GBA_BUTTONS[gba_btn]
-        @app.command(widget, 'configure', text: "#{gba_btn.upcase}: Press...")
+        @app.command(widget, 'configure', text: "#{gba_btn.upcase}: #{translate('settings.press')}")
         @listen_timer = @app.after(LISTEN_TIMEOUT_MS) { cancel_listening }
 
         if @keyboard_mode

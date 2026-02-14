@@ -16,6 +16,7 @@ module Teek
     # `image create photo -file`). Pure Tk — no SDL2.
     class SaveStatePicker
       include ChildWindow
+      include Locale::Translatable
 
       TOP = ".mgba_state_picker"
 
@@ -55,7 +56,7 @@ module Teek
       private
 
       def build_ui
-        build_toplevel('Save States', geometry: '700x380') do
+        build_toplevel(translate('picker.title'), geometry: '700x380') do
           build_grid
         end
         @built = true
@@ -84,13 +85,13 @@ module Teek
           @app.command(:label, thumb,
             image: @blank_thumb, compound: :center,
             bg: '#1a1a2e', fg: '#666666',
-            text: 'Empty', anchor: :center,
+            text: translate('picker.empty'), anchor: :center,
             font: '{TkDefaultFont} 9')
           @app.command(:pack, thumb, pady: [0, 4])
 
           # Slot number + timestamp
           info = "#{cell}.info"
-          @app.command('ttk::label', info, text: "Slot #{slot}", anchor: :center)
+          @app.command('ttk::label', info, text: translate('picker.slot', n: slot), anchor: :center)
           @app.command(:pack, info, fill: :x)
 
           time_lbl = "#{cell}.time"
@@ -118,7 +119,7 @@ module Teek
 
         # Close button
         close_btn = "#{TOP}.close_btn"
-        @app.command('ttk::button', close_btn, text: 'Close', command: proc { hide })
+        @app.command('ttk::button', close_btn, text: translate('picker.close'), command: proc { hide })
         @app.command(:pack, close_btn, pady: [0, 8])
       end
 
@@ -139,7 +140,7 @@ module Teek
             # Clear thumbnail — show Empty or just slot text on blank image
             @app.command(cell[:thumb], :configure,
               image: @blank_thumb, compound: :center,
-              text: populated ? 'No preview' : 'Empty')
+              text: populated ? translate('picker.no_preview') : translate('picker.empty'))
           end
 
           # Timestamp
@@ -175,7 +176,7 @@ module Teek
         @app.tcl_eval("image delete #{src_name}") rescue nil
         @app.tcl_eval("image delete #{photo_name}") rescue nil
         @app.command(@cells[slot][:thumb], :configure,
-          image: @blank_thumb, compound: :center, text: 'No preview')
+          image: @blank_thumb, compound: :center, text: translate('picker.no_preview'))
       end
 
       def cleanup_photos

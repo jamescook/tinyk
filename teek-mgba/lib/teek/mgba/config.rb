@@ -31,6 +31,7 @@ module Teek
         'save_state_debounce' => 3.0,
         'quick_save_slot'    => 1,
         'save_state_backup'  => true,
+        'locale'             => 'auto',
       }.freeze
 
       GAMEPAD_DEFAULTS = {
@@ -180,6 +181,15 @@ module Teek
 
       def save_state_backup=(val)
         global['save_state_backup'] = !!val
+      end
+
+      # @return [String] locale code ('auto', 'en', 'ja', etc.)
+      def locale
+        global['locale']
+      end
+
+      def locale=(val)
+        global['locale'] = val.to_s
       end
 
       # -- Recent ROMs -------------------------------------------------------

@@ -18,6 +18,7 @@ module Teek
     #   Teek::MGBA::Player.new.run
     class Player
       include Teek::MGBA
+      include Locale::Translatable
 
       GBA_W  = 240
       GBA_H  = 160
@@ -209,7 +210,7 @@ module Teek
         # Status label overlaid on viewport (shown when no ROM loaded)
         @status_label = '.status_overlay'
         @app.command(:label, @status_label,
-          text: 'File > Open ROM...',
+          text: translate('player.open_rom_hint'),
           fg: '#888888', bg: '#000000',
           font: '{TkDefaultFont} 11')
         @app.command(:place, @status_label,
@@ -219,18 +220,18 @@ module Teek
         # Streaming texture at native GBA resolution
         @texture = @viewport.renderer.create_texture(GBA_W, GBA_H, :streaming)
 
-        # Font for on-screen indicators (fast-forward, etc.)
+        # Font for on-screen indicators (FPS, fast-forward label)
         font_path = File.expand_path('../../../assets/JetBrainsMonoNL-Regular.ttf', __dir__)
         @overlay_font = File.exist?(font_path) ? @viewport.renderer.load_font(font_path, 14) : nil
-        # Crop height for inverse-blend overlays: ascent covers glyphs above
-        # baseline, plus a few pixels for common descenders (p, g, y).
-        # This excludes the very bottom rows where TTF AA residue causes
-        # artifacts under inverse blending.
-        if @overlay_font
-          ascent = @overlay_font.ascent
-          full_h = @overlay_font.measure('p')[1]
-          @overlay_crop_h = [ascent + (full_h - ascent) / 2, full_h - 1].min
-        end
+
+        # CJK-capable font for toast notifications and translated UI text
+        toast_font_path = File.expand_path('../../../assets/ark-pixel-12px-monospaced-ja.ttf', __dir__)
+        @toast_font = File.exist?(toast_font_path) ? @viewport.renderer.load_font(toast_font_path, 12) : @overlay_font
+
+        # Crop heights: ascent + partial descender. Excludes the very bottom
+        # rows where TTF anti-alias residue causes visible white-line artifacts.
+        @overlay_crop_h = compute_crop_h(@overlay_font)
+        @toast_crop_h   = compute_crop_h(@toast_font)
         @ff_label_tex = nil
         @fps_tex = nil
         @fps_shadow_tex = nil
@@ -309,7 +310,7 @@ module Teek
 
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         if now - @last_save_time < @config.save_state_debounce
-          show_toast("Save blocked (too fast)")
+          show_toast(translate('toast.save_blocked'))
           return
         end
 
@@ -326,9 +327,9 @@ module Teek
         if @core.save_state_to_file(ss)
           @last_save_time = now
           save_screenshot(png)
-          show_toast("State saved to slot #{slot}")
+          show_toast(translate('toast.state_saved', slot: slot))
         else
-          show_toast("Failed to save state")
+          show_toast(translate('toast.save_failed'))
         end
       end
 
@@ -337,14 +338,14 @@ module Teek
 
         ss = state_path(slot)
         unless File.exist?(ss)
-          show_toast("No state in slot #{slot}")
+          show_toast(translate('toast.no_state', slot: slot))
           return
         end
 
         if @core.load_state_from_file(ss)
-          show_toast("State loaded from slot #{slot}")
+          show_toast(translate('toast.state_loaded', slot: slot))
         else
-          show_toast("Failed to load state")
+          show_toast(translate('toast.load_failed'))
         end
       end
 
@@ -375,9 +376,9 @@ module Teek
       end
 
       MODAL_LABELS = {
-        settings: 'Settings',
-        picker: 'Save States',
-        rom_info: 'ROM Info',
+        settings: 'menu.settings',
+        picker: 'menu.save_states',
+        rom_info: 'menu.rom_info',
       }.freeze
 
       def show_settings(tab: nil)
@@ -405,8 +406,9 @@ module Teek
         @was_paused_before_modal = @paused
         toggle_fast_forward if @fast_forward
         toggle_pause if @core && !@paused
-        label = MODAL_LABELS[@modal_child] || @modal_child.to_s
-        show_toast("Waiting for #{label}\u2026", permanent: true)
+        locale_key = MODAL_LABELS[@modal_child] || @modal_child.to_s
+        label = translate(locale_key)
+        show_toast(translate('toast.waiting_for', label: label), permanent: true)
       end
 
       def bell
@@ -593,7 +595,7 @@ module Teek
       end
 
       def refresh_gamepads
-        names = ['Keyboard Only']
+        names = [translate('settings.keyboard_only')]
         prev_gp = @gamepad
         8.times do |i|
           gp = begin; Teek::SDL2::Gamepad.open(i); rescue; nil; end
@@ -609,9 +611,9 @@ module Teek
 
       def update_status_label
         return if @core # hidden during gameplay
-        gp_text = @gamepad ? @gamepad.name : 'No gamepad detected'
+        gp_text = @gamepad ? @gamepad.name : translate('settings.no_gamepad')
         @app.command(@status_label, :configure,
-          text: "File > Open ROM...\n#{gp_text}")
+          text: "#{translate('player.open_rom_hint')}\n#{gp_text}")
       end
 
       def setup_input
@@ -657,22 +659,22 @@ module Teek
 
         # File menu
         @app.command(:menu, "#{menubar}.file", tearoff: 0)
-        @app.command(menubar, :add, :cascade, label: 'File', menu: "#{menubar}.file")
+        @app.command(menubar, :add, :cascade, label: translate('menu.file'), menu: "#{menubar}.file")
 
         @app.command("#{menubar}.file", :add, :command,
-                     label: 'Open ROM...', accelerator: 'Cmd+O',
+                     label: translate('menu.open_rom'), accelerator: 'Cmd+O',
                      command: proc { open_rom_dialog })
 
         # Recent ROMs submenu
         @recent_menu = "#{menubar}.file.recent"
         @app.command(:menu, @recent_menu, tearoff: 0)
         @app.command("#{menubar}.file", :add, :cascade,
-                     label: 'Recent', menu: @recent_menu)
+                     label: translate('menu.recent'), menu: @recent_menu)
         rebuild_recent_menu
 
         @app.command("#{menubar}.file", :add, :separator)
         @app.command("#{menubar}.file", :add, :command,
-                     label: 'Quit', accelerator: 'Cmd+Q',
+                     label: translate('menu.quit'), accelerator: 'Cmd+Q',
                      command: proc { @running = false })
 
         @app.command(:bind, '.', '<Command-o>', proc { open_rom_dialog })
@@ -681,11 +683,12 @@ module Teek
         # Settings menu — one entry per settings tab
         settings_menu = "#{menubar}.settings"
         @app.command(:menu, settings_menu, tearoff: 0)
-        @app.command(menubar, :add, :cascade, label: 'Settings', menu: settings_menu)
+        @app.command(menubar, :add, :cascade, label: translate('menu.settings'), menu: settings_menu)
 
-        SettingsWindow::TABS.each do |label, tab_path|
-          accel = label == 'Video' ? 'Cmd+,' : nil
-          opts = { label: "#{label}...", command: proc { show_settings(tab: tab_path) } }
+        SettingsWindow::TABS.each do |locale_key, tab_path|
+          display = translate(locale_key)
+          accel = locale_key == 'settings.video' ? 'Cmd+,' : nil
+          opts = { label: "#{display}…", command: proc { show_settings(tab: tab_path) } }
           opts[:accelerator] = accel if accel
           @app.command(settings_menu, :add, :command, **opts)
         end
@@ -693,37 +696,37 @@ module Teek
         # View menu
         view_menu = "#{menubar}.view"
         @app.command(:menu, view_menu, tearoff: 0)
-        @app.command(menubar, :add, :cascade, label: 'View', menu: view_menu)
+        @app.command(menubar, :add, :cascade, label: translate('menu.view'), menu: view_menu)
 
         @app.command(view_menu, :add, :command,
-                     label: 'Fullscreen', accelerator: 'F11',
+                     label: translate('menu.fullscreen'), accelerator: 'F11',
                      command: proc { toggle_fullscreen })
         @app.command(view_menu, :add, :command,
-                     label: 'ROM Info...', state: :disabled,
+                     label: translate('menu.rom_info'), state: :disabled,
                      command: proc { show_rom_info })
         @view_menu = view_menu
 
         # Emulation menu
         @emu_menu = "#{menubar}.emu"
         @app.command(:menu, @emu_menu, tearoff: 0)
-        @app.command(menubar, :add, :cascade, label: 'Emulation', menu: @emu_menu)
+        @app.command(menubar, :add, :cascade, label: translate('menu.emulation'), menu: @emu_menu)
 
         @app.command(@emu_menu, :add, :command,
-                     label: 'Pause', accelerator: 'P',
+                     label: translate('menu.pause'), accelerator: 'P',
                      command: proc { toggle_pause })
         @app.command(@emu_menu, :add, :command,
-                     label: 'Reset', accelerator: 'Cmd+R',
+                     label: translate('menu.reset'), accelerator: 'Cmd+R',
                      command: proc { reset_core })
         @app.command(@emu_menu, :add, :separator)
         @app.command(@emu_menu, :add, :command,
-                     label: 'Quick Save', accelerator: 'F5', state: :disabled,
+                     label: translate('menu.quick_save'), accelerator: 'F5', state: :disabled,
                      command: proc { quick_save })
         @app.command(@emu_menu, :add, :command,
-                     label: 'Quick Load', accelerator: 'F8', state: :disabled,
+                     label: translate('menu.quick_load'), accelerator: 'F8', state: :disabled,
                      command: proc { quick_load })
         @app.command(@emu_menu, :add, :separator)
         @app.command(@emu_menu, :add, :command,
-                     label: 'Save States...', accelerator: 'F6', state: :disabled,
+                     label: translate('menu.save_states'), accelerator: 'F6', state: :disabled,
                      command: proc { show_state_picker })
 
         @app.command(:bind, '.', '<Command-r>', proc { reset_core })
@@ -734,11 +737,11 @@ module Teek
         @paused = !@paused
         if @paused
           @stream.pause
-          @app.command(@emu_menu, :entryconfigure, 0, label: 'Resume')
+          @app.command(@emu_menu, :entryconfigure, 0, label: translate('menu.resume'))
         else
           @stream.resume
           @next_frame = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          @app.command(@emu_menu, :entryconfigure, 0, label: 'Pause')
+          @app.command(@emu_menu, :entryconfigure, 0, label: translate('menu.pause'))
         end
       end
 
@@ -793,6 +796,13 @@ module Teek
 
       # Build an inverse-blend overlay texture from text. White source
       # pixels invert the destination, transparent regions pass through.
+      def compute_crop_h(font)
+        return nil unless font
+        ascent = font.ascent
+        full_h = font.measure('p')[1]
+        [ascent + (full_h - ascent) / 2, full_h - 1].min
+      end
+
       def build_inverse_tex(text)
         return nil unless @overlay_font
         tex = @overlay_font.render_text(text, 255, 255, 255)
@@ -825,11 +835,12 @@ module Teek
       # @param permanent [Boolean] if true, stays until explicitly destroyed
       def show_toast(message, duration: nil, permanent: false)
         destroy_toast
-        return unless @overlay_font
+        font = @toast_font || @overlay_font
+        return unless font
 
-        @toast_text_tex = @overlay_font.render_text(message, 255, 255, 255)
+        @toast_text_tex = font.render_text(message, 255, 255, 255)
         tw = @toast_text_tex.width
-        th = @overlay_crop_h || @toast_text_tex.height
+        th = @toast_crop_h || @toast_text_tex.height
 
         box_w = tw + TOAST_PAD_X * 2
         box_h = th + TOAST_PAD_Y * 2
@@ -920,8 +931,8 @@ module Teek
         name = File.basename(new_path)
         result = @app.command('tk_messageBox',
           parent: '.',
-          title: 'Game Running',
-          message: "Another game is running. Switch to #{name}?",
+          title: translate('dialog.game_running_title'),
+          message: translate('dialog.game_running_msg', name: name),
           type: :okcancel,
           icon: :warning)
         result == 'ok'
@@ -929,7 +940,8 @@ module Teek
 
       def open_rom_dialog
         filetypes = '{{GBA ROMs} {.gba}} {{GB ROMs} {.gb .gbc}} {{All Files} {*}}'
-        path = @app.tcl_eval("tk_getOpenFile -title {Open ROM} -filetypes {#{filetypes}}")
+        title = translate('menu.open_rom').delete('…')
+        path = @app.tcl_eval("tk_getOpenFile -title {#{title}} -filetypes {#{filetypes}}")
         return if path.empty?
         return unless confirm_rom_change(path)
 
@@ -966,9 +978,9 @@ module Teek
         sav_name = File.basename(path, File.extname(path)) + '.sav'
         sav_path = File.join(saves, sav_name)
         if File.exist?(sav_path)
-          show_toast("Loaded #{sav_name}")
+          show_toast(translate('toast.loaded_sav', name: sav_name))
         else
-          show_toast("Created #{sav_name}")
+          show_toast(translate('toast.created_sav', name: sav_name))
         end
       end
 
@@ -976,8 +988,8 @@ module Teek
         unless File.exist?(path)
           @app.command('tk_messageBox',
             parent: '.',
-            title: 'ROM Not Found',
-            message: "The ROM file no longer exists:\n#{path}",
+            title: translate('dialog.rom_not_found_title'),
+            message: translate('dialog.rom_not_found_msg', path: path),
             type: :ok,
             icon: :error)
           @config.remove_recent_rom(path)
@@ -997,7 +1009,7 @@ module Teek
         roms = @config.recent_roms
         if roms.empty?
           @app.command(@recent_menu, :add, :command,
-                       label: '(none)', state: :disabled)
+                       label: translate('player.none'), state: :disabled)
         else
           roms.each do |rom_path|
             label = File.basename(rom_path)
@@ -1007,7 +1019,7 @@ module Teek
           end
           @app.command(@recent_menu, :add, :separator)
           @app.command(@recent_menu, :add, :command,
-                       label: 'Clear',
+                       label: translate('player.clear'),
                        command: proc { clear_recent_roms })
         end
       end
@@ -1201,7 +1213,7 @@ module Teek
         elapsed = now - @fps_time
         if elapsed >= 1.0
           fps = (@fps_count / elapsed).round(1)
-          rebuild_fps_overlay("#{fps} fps") if @show_fps
+          rebuild_fps_overlay(translate('player.fps', fps: fps)) if @show_fps
           @audio_samples_produced = 0
           @fps_count = 0
           @fps_time = now
@@ -1234,6 +1246,7 @@ module Teek
         destroy_ff_label
         destroy_fps_overlay
         destroy_toast
+        @toast_font&.destroy unless @toast_font&.destroyed? || @toast_font == @overlay_font
         @overlay_font&.destroy unless @overlay_font&.destroyed?
         @stream&.destroy unless @stream&.destroyed?
         @texture&.destroy unless @texture&.destroyed?
