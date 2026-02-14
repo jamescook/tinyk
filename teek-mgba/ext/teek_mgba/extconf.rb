@@ -80,6 +80,20 @@ def find_mgba
     end
   end
 
+  # 5. MSYS2/MinGW (Windows) — mgba has no .pc file so pkg-config won't find it
+  if RbConfig::CONFIG['host_os'] =~ /mingw|mswin/
+    mingw_prefix = RbConfig::CONFIG['prefix']
+    inc = "#{mingw_prefix}/include"
+    lib = "#{mingw_prefix}/lib"
+    if File.exist?("#{inc}/mgba/core/core.h")
+      $INCFLAGS << " -I#{inc}"
+      $LDFLAGS << " -L#{lib}"
+      if check_mgba
+        return true
+      end
+    end
+  end
+
   false
 end
 
@@ -89,6 +103,7 @@ unless find_mgba
 
       macOS:   rake mgba:deps   (builds from source into vendor/)
       Debian:  sudo apt install libmgba-dev
+      Windows: pacman -S mingw-w64-ucrt-x86_64-mgba  (MSYS2)
 
     Or set MGBA_DIR=/path/to/mgba/install
   MSG
