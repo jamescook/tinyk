@@ -3,6 +3,7 @@
 #include <ruby/thread.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 /*
  * Forward declarations for blip_buf (audio buffer API).
@@ -121,12 +122,15 @@ get_mgba_core(VALUE self)
 }
 
 /* --------------------------------------------------------- */
-/* Core#initialize(rom_path)                                 */
+/* Core#initialize(rom_path, save_dir=nil)                   */
 /* --------------------------------------------------------- */
 
 static VALUE
-mgba_core_initialize(VALUE self, VALUE rom_path)
+mgba_core_initialize(int argc, VALUE *argv, VALUE self)
 {
+    VALUE rom_path, save_dir;
+    rb_scan_args(argc, argv, "11", &rom_path, &save_dir);
+
     struct mgba_core *mc;
     TypedData_Get_Struct(self, struct mgba_core, &mgba_core_type, mc);
 
@@ -170,10 +174,22 @@ mgba_core_initialize(VALUE self, VALUE rom_path)
         rb_raise(rb_eArgError, "failed to load ROM: %s", path);
     }
 
+    /* 7. Override save directory if provided */
+    if (!NIL_P(save_dir)) {
+        Check_Type(save_dir, T_STRING);
+        struct mCoreOptions opts = { 0 };
+        opts.savegamePath = (char *)StringValueCStr(save_dir);
+        mDirectorySetMapOptions(&core->dirs, &opts);
+    }
+
     /* 8. Reset */
     core->reset(core);
 
-    /* 9. Set blip_buf output rate to 44100 Hz (must be after reset) */
+    /* 9. Autoload save file (.sav alongside ROM, or in save_dir).
+     * Creates the .sav if it doesn't exist yet. */
+    mCoreAutoloadSave(core);
+
+    /* 10. Set blip_buf output rate to 44100 Hz (must be after reset) */
     {
         double clock_rate = (double)core->frequency(core);
         struct blip_t *left  = core->getAudioChannel(core, 0);
@@ -329,13 +345,96 @@ mgba_core_title(VALUE self)
     char title[16];
     memset(title, 0, sizeof(title));
     mc->core->getGameTitle(mc->core, title);
+    title[15] = '\0';
 
-    /* Trim trailing spaces and nulls */
-    int len = 15;
-    while (len >= 0 && (title[len] == '\0' || title[len] == ' ')) {
-        len--;
+    /* strlen stops at first null; then trim trailing spaces */
+    int len = (int)strlen(title);
+    while (len > 0 && title[len - 1] == ' ') len--;
+    return rb_str_new(title, len);
+}
+
+/* --------------------------------------------------------- */
+/* Core#game_code                                            */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_game_code(VALUE self)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    char code[16];
+    memset(code, 0, sizeof(code));
+    mc->core->getGameCode(mc->core, code);
+    code[15] = '\0';
+
+    /* strlen stops at first null; then trim trailing spaces */
+    int len = (int)strlen(code);
+    while (len > 0 && code[len - 1] == ' ') len--;
+    return rb_str_new(code, len);
+}
+
+/* --------------------------------------------------------- */
+/* Core#checksum                                             */
+/* Returns the CRC32 checksum of the loaded ROM.             */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_checksum(VALUE self)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    uint32_t crc = 0;
+    mc->core->checksum(mc->core, &crc, mCHECKSUM_CRC32);
+    return UINT2NUM(crc);
+}
+
+/* --------------------------------------------------------- */
+/* Core#platform                                             */
+/* Returns "GBA", "GB", or "Unknown".                        */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_platform(VALUE self)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    enum mPlatform p = mc->core->platform(mc->core);
+    switch (p) {
+    case mPLATFORM_GBA: return rb_str_new_cstr("GBA");
+    case mPLATFORM_GB:  return rb_str_new_cstr("GB");
+    default:            return rb_str_new_cstr("Unknown");
     }
-    return rb_str_new(title, len + 1);
+}
+
+/* --------------------------------------------------------- */
+/* Core#rom_size                                             */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_rom_size(VALUE self)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    size_t sz = mc->core->romSize(mc->core);
+    return SIZET2NUM(sz);
+}
+
+/* --------------------------------------------------------- */
+/* Core#maker_code                                           */
+/* Reads the 2-byte maker/publisher code from the GBA ROM    */
+/* header at offset 0xB0. Uses busRead8 at 0x080000B0.      */
+/* Returns empty string for non-GBA ROMs.                    */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_maker_code(VALUE self)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    if (mc->core->platform(mc->core) != mPLATFORM_GBA) {
+        return rb_str_new_cstr("");
+    }
+
+    char maker[3];
+    maker[0] = (char)mc->core->busRead8(mc->core, 0x080000B0);
+    maker[1] = (char)mc->core->busRead8(mc->core, 0x080000B1);
+    maker[2] = '\0';
+    return rb_str_new(maker, (int)strlen(maker));
 }
 
 /* --------------------------------------------------------- */
@@ -368,6 +467,108 @@ mgba_core_destroyed_p(VALUE self)
 }
 
 /* --------------------------------------------------------- */
+/* Teek::MGBA.toast_background(w, h, radius)                 */
+/*                                                           */
+/* Generates ARGB8888 pixel data for a toast notification     */
+/* background: semi-transparent dark fill, lighter border,    */
+/* anti-aliased rounded corners, transparent outside.         */
+/* Returns a binary String of w*h*4 bytes.                   */
+/* --------------------------------------------------------- */
+
+/* Toast palette (non-premultiplied, for SDL_BLENDMODE_BLEND) */
+enum {
+    TOAST_FILL_R = 20,  TOAST_FILL_G = 20,  TOAST_FILL_B = 28,  TOAST_FILL_A = 180,
+    TOAST_BDR_R  = 100, TOAST_BDR_G  = 110, TOAST_BDR_B  = 140, TOAST_BDR_A  = 210,
+};
+
+static inline uint32_t
+toast_argb(uint8_t a, uint8_t r, uint8_t g, uint8_t b) {
+    return ((uint32_t)a << 24) | ((uint32_t)r << 16) |
+           ((uint32_t)g << 8)  | (uint32_t)b;
+}
+
+static VALUE
+mgba_toast_background(VALUE mod, VALUE rb_w, VALUE rb_h, VALUE rb_rad)
+{
+    (void)mod;
+    int w   = NUM2INT(rb_w);
+    int h   = NUM2INT(rb_h);
+    int rad = NUM2INT(rb_rad);
+
+    if (w <= 0 || h <= 0) return rb_str_new(NULL, 0);
+    if (rad < 0) rad = 0;
+    if (rad > w / 2) rad = w / 2;
+    if (rad > h / 2) rad = h / 2;
+
+    long nbytes = (long)w * h * 4;
+    VALUE str = rb_str_new(NULL, nbytes);
+    uint32_t *pixels = (uint32_t *)RSTRING_PTR(str);
+    memset(pixels, 0, nbytes);
+
+    const uint32_t fill_color   = toast_argb(TOAST_FILL_A, TOAST_FILL_R, TOAST_FILL_G, TOAST_FILL_B);
+    const uint32_t border_color = toast_argb(TOAST_BDR_A, TOAST_BDR_R, TOAST_BDR_G, TOAST_BDR_B);
+
+    float border_w = 1.5f;  /* border thickness in pixels */
+    float aa_w = 1.2f;      /* anti-aliasing width */
+    float frad = (float)rad;
+
+    for (int py = 0; py < h; py++) {
+        for (int px = 0; px < w; px++) {
+            /* Signed distance from the rounded-rect boundary (negative = inside).
+             * Uses standard SDF for a rounded rectangle. */
+            float qx, qy;
+            float cx = (float)px + 0.5f;
+            float cy = (float)py + 0.5f;
+            float hw = (float)w * 0.5f;
+            float hh = (float)h * 0.5f;
+
+            /* Distance from center, reduced by half-size minus radius */
+            qx = fabsf(cx - hw) - (hw - frad);
+            qy = fabsf(cy - hh) - (hh - frad);
+
+            float dist;
+            float mx = qx > 0.0f ? qx : 0.0f;
+            float my = qy > 0.0f ? qy : 0.0f;
+            float outside = sqrtf(mx * mx + my * my);
+            float inside  = qx > qy ? qx : qy;
+            if (inside < 0.0f) inside = 0.0f;
+            dist = outside + (outside > 0.0f ? 0.0f : (qx > qy ? qx : qy)) - frad;
+
+            uint32_t color;
+            if (dist >= aa_w * 0.5f) {
+                /* Outside: transparent */
+                color = 0;
+            } else if (dist >= -aa_w * 0.5f) {
+                /* Outer AA fringe: fade border from transparent to full.
+                 * Non-premultiplied: RGB stays at border color, alpha varies. */
+                float t = 0.5f - dist / aa_w;  /* 0..1 */
+                uint8_t a = (uint8_t)(TOAST_BDR_A * t + 0.5f);
+                if (a < 8) { color = 0; }  /* suppress faint fringe dots */
+                else { color = toast_argb(a, TOAST_BDR_R, TOAST_BDR_G, TOAST_BDR_B); }
+            } else if (dist >= -(border_w - aa_w * 0.5f)) {
+                /* Solid border */
+                color = border_color;
+            } else if (dist >= -(border_w + aa_w * 0.5f)) {
+                /* Inner AA fringe: blend border → fill */
+                float t = (dist + border_w + aa_w * 0.5f) / aa_w;  /* 1..0 inward */
+                uint8_t a = (uint8_t)(TOAST_BDR_A * t + TOAST_FILL_A * (1.0f - t) + 0.5f);
+                uint8_t r = (uint8_t)(TOAST_BDR_R * t + TOAST_FILL_R * (1.0f - t) + 0.5f);
+                uint8_t g = (uint8_t)(TOAST_BDR_G * t + TOAST_FILL_G * (1.0f - t) + 0.5f);
+                uint8_t b = (uint8_t)(TOAST_BDR_B * t + TOAST_FILL_B * (1.0f - t) + 0.5f);
+                color = toast_argb(a, r, g, b);
+            } else {
+                /* Fill interior */
+                color = fill_color;
+            }
+
+            pixels[py * w + px] = color;
+        }
+    }
+
+    return str;
+}
+
+/* --------------------------------------------------------- */
 /* Init                                                      */
 /* --------------------------------------------------------- */
 
@@ -387,7 +588,7 @@ Init_teek_mgba(void)
     cCore = rb_define_class_under(mTeekMGBA, "Core", rb_cObject);
     rb_define_alloc_func(cCore, mgba_core_alloc);
 
-    rb_define_method(cCore, "initialize",  mgba_core_initialize, 1);
+    rb_define_method(cCore, "initialize",  mgba_core_initialize, -1);
     rb_define_method(cCore, "run_frame",   mgba_core_run_frame, 0);
     rb_define_method(cCore, "video_buffer", mgba_core_video_buffer, 0);
     rb_define_method(cCore, "video_buffer_argb", mgba_core_video_buffer_argb, 0);
@@ -396,6 +597,11 @@ Init_teek_mgba(void)
     rb_define_method(cCore, "width",       mgba_core_width, 0);
     rb_define_method(cCore, "height",      mgba_core_height, 0);
     rb_define_method(cCore, "title",       mgba_core_title, 0);
+    rb_define_method(cCore, "game_code",   mgba_core_game_code, 0);
+    rb_define_method(cCore, "maker_code",  mgba_core_maker_code, 0);
+    rb_define_method(cCore, "checksum",    mgba_core_checksum, 0);
+    rb_define_method(cCore, "platform",    mgba_core_platform, 0);
+    rb_define_method(cCore, "rom_size",    mgba_core_rom_size, 0);
     rb_define_method(cCore, "destroy",     mgba_core_destroy, 0);
     rb_define_method(cCore, "destroyed?",  mgba_core_destroyed_p, 0);
 
@@ -410,4 +616,7 @@ Init_teek_mgba(void)
     rb_define_const(mTeekMGBA, "KEY_DOWN",   INT2NUM(1 << TEEK_GBA_KEY_DOWN));
     rb_define_const(mTeekMGBA, "KEY_R",      INT2NUM(1 << TEEK_GBA_KEY_R));
     rb_define_const(mTeekMGBA, "KEY_L",      INT2NUM(1 << TEEK_GBA_KEY_L));
+
+    /* Toast background generator */
+    rb_define_module_function(mTeekMGBA, "toast_background", mgba_toast_background, 3);
 }

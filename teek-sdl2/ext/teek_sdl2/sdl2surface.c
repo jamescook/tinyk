@@ -146,6 +146,7 @@ renderer_fill_rect(int argc, VALUE *argv, VALUE self)
     b = (Uint8)NUM2INT(argv[6]);
     if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
 
+    SDL_SetRenderDrawBlendMode(ren->renderer, a < 255 ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(ren->renderer, r, g, b, a);
     SDL_RenderFillRect(ren->renderer, &rect);
     return self;
@@ -171,6 +172,7 @@ renderer_draw_rect(int argc, VALUE *argv, VALUE self)
     b = (Uint8)NUM2INT(argv[6]);
     if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
 
+    SDL_SetRenderDrawBlendMode(ren->renderer, a < 255 ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(ren->renderer, r, g, b, a);
     SDL_RenderDrawRect(ren->renderer, &rect);
     return self;
@@ -191,10 +193,141 @@ renderer_draw_line(int argc, VALUE *argv, VALUE self)
     b = (Uint8)NUM2INT(argv[6]);
     if (argc > 7) a = (Uint8)NUM2INT(argv[7]);
 
+    SDL_SetRenderDrawBlendMode(ren->renderer, a < 255 ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(ren->renderer, r, g, b, a);
     SDL_RenderDrawLine(ren->renderer,
                        NUM2INT(argv[0]), NUM2INT(argv[1]),
                        NUM2INT(argv[2]), NUM2INT(argv[3]));
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#fill_rounded_rect(x, y, w, h, radius, r, g, b, a=255)
+ *
+ * Filled rectangle with rounded corners. Uses the midpoint circle
+ * algorithm to fill quarter-circle arcs at each corner.
+ */
+static VALUE
+renderer_fill_rounded_rect(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 8, 9);
+    int x   = NUM2INT(argv[0]);
+    int y   = NUM2INT(argv[1]);
+    int w   = NUM2INT(argv[2]);
+    int h   = NUM2INT(argv[3]);
+    int rad = NUM2INT(argv[4]);
+    r = (Uint8)NUM2INT(argv[5]);
+    g = (Uint8)NUM2INT(argv[6]);
+    b = (Uint8)NUM2INT(argv[7]);
+    if (argc > 8) a = (Uint8)NUM2INT(argv[8]);
+
+    SDL_SetRenderDrawBlendMode(ren->renderer, a < 255 ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(ren->renderer, r, g, b, a);
+
+    if (rad <= 0) {
+        SDL_Rect rect = {x, y, w, h};
+        SDL_RenderFillRect(ren->renderer, &rect);
+        return self;
+    }
+    if (rad > w / 2) rad = w / 2;
+    if (rad > h / 2) rad = h / 2;
+
+    /* Three rectangles for the body */
+    SDL_Rect rects[3] = {
+        {x + rad, y,             w - 2 * rad, h},              /* center column */
+        {x,       y + rad,       rad,         h - 2 * rad},    /* left strip */
+        {x + w - rad, y + rad,   rad,         h - 2 * rad},    /* right strip */
+    };
+    SDL_RenderFillRects(ren->renderer, rects, 3);
+
+    /* Quarter-circle fills at each corner (midpoint circle, scanline) */
+    int cx_l = x + rad;
+    int cx_r = x + w - rad - 1;
+    int cy_t = y + rad;
+    int cy_b = y + h - rad - 1;
+    int dx = rad, dy = 0, err = 1 - rad;
+
+    while (dx >= dy) {
+        SDL_RenderDrawLine(ren->renderer, cx_l - dx, cy_t - dy, cx_l, cy_t - dy);
+        SDL_RenderDrawLine(ren->renderer, cx_r, cy_t - dy, cx_r + dx, cy_t - dy);
+        SDL_RenderDrawLine(ren->renderer, cx_l - dx, cy_b + dy, cx_l, cy_b + dy);
+        SDL_RenderDrawLine(ren->renderer, cx_r, cy_b + dy, cx_r + dx, cy_b + dy);
+        if (dx != dy) {
+            SDL_RenderDrawLine(ren->renderer, cx_l - dy, cy_t - dx, cx_l, cy_t - dx);
+            SDL_RenderDrawLine(ren->renderer, cx_r, cy_t - dx, cx_r + dy, cy_t - dx);
+            SDL_RenderDrawLine(ren->renderer, cx_l - dy, cy_b + dx, cx_l, cy_b + dx);
+            SDL_RenderDrawLine(ren->renderer, cx_r, cy_b + dx, cx_r + dy, cy_b + dx);
+        }
+        dy++;
+        if (err < 0) { err += 2 * dy + 1; }
+        else { dx--; err += 2 * (dy - dx) + 1; }
+    }
+    return self;
+}
+
+/*
+ * Teek::SDL2::Renderer#draw_rounded_rect(x, y, w, h, radius, r, g, b, a=255)
+ *
+ * Outline rectangle with rounded corners. Draws four straight edges
+ * and four quarter-circle arcs using the midpoint circle algorithm.
+ */
+static VALUE
+renderer_draw_rounded_rect(int argc, VALUE *argv, VALUE self)
+{
+    struct sdl2_renderer *ren = get_renderer(self);
+    Uint8 r, g, b, a = 255;
+
+    rb_check_arity(argc, 8, 9);
+    int x   = NUM2INT(argv[0]);
+    int y   = NUM2INT(argv[1]);
+    int w   = NUM2INT(argv[2]);
+    int h   = NUM2INT(argv[3]);
+    int rad = NUM2INT(argv[4]);
+    r = (Uint8)NUM2INT(argv[5]);
+    g = (Uint8)NUM2INT(argv[6]);
+    b = (Uint8)NUM2INT(argv[7]);
+    if (argc > 8) a = (Uint8)NUM2INT(argv[8]);
+
+    SDL_SetRenderDrawBlendMode(ren->renderer, a < 255 ? SDL_BLENDMODE_BLEND : SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(ren->renderer, r, g, b, a);
+
+    if (rad <= 0) {
+        SDL_Rect rect = {x, y, w, h};
+        SDL_RenderDrawRect(ren->renderer, &rect);
+        return self;
+    }
+    if (rad > w / 2) rad = w / 2;
+    if (rad > h / 2) rad = h / 2;
+
+    /* Four straight edges (inset by radius) */
+    SDL_RenderDrawLine(ren->renderer, x + rad, y, x + w - rad - 1, y);
+    SDL_RenderDrawLine(ren->renderer, x + rad, y + h - 1, x + w - rad - 1, y + h - 1);
+    SDL_RenderDrawLine(ren->renderer, x, y + rad, x, y + h - rad - 1);
+    SDL_RenderDrawLine(ren->renderer, x + w - 1, y + rad, x + w - 1, y + h - rad - 1);
+
+    /* Quarter-circle arcs at each corner */
+    int cx_l = x + rad;
+    int cx_r = x + w - rad - 1;
+    int cy_t = y + rad;
+    int cy_b = y + h - rad - 1;
+    int dx = rad, dy = 0, err = 1 - rad;
+
+    while (dx >= dy) {
+        SDL_RenderDrawPoint(ren->renderer, cx_l - dx, cy_t - dy);
+        SDL_RenderDrawPoint(ren->renderer, cx_r + dx, cy_t - dy);
+        SDL_RenderDrawPoint(ren->renderer, cx_l - dx, cy_b + dy);
+        SDL_RenderDrawPoint(ren->renderer, cx_r + dx, cy_b + dy);
+        SDL_RenderDrawPoint(ren->renderer, cx_l - dy, cy_t - dx);
+        SDL_RenderDrawPoint(ren->renderer, cx_r + dy, cy_t - dx);
+        SDL_RenderDrawPoint(ren->renderer, cx_l - dy, cy_b + dx);
+        SDL_RenderDrawPoint(ren->renderer, cx_r + dy, cy_b + dx);
+        dy++;
+        if (err < 0) { err += 2 * dy + 1; }
+        else { dx--; err += 2 * (dy - dx) + 1; }
+    }
     return self;
 }
 
@@ -638,6 +771,8 @@ Init_sdl2surface(VALUE mTeekSDL2)
     rb_define_method(cRenderer, "fill_rect", renderer_fill_rect, -1);
     rb_define_method(cRenderer, "draw_rect", renderer_draw_rect, -1);
     rb_define_method(cRenderer, "draw_line", renderer_draw_line, -1);
+    rb_define_method(cRenderer, "fill_rounded_rect", renderer_fill_rounded_rect, -1);
+    rb_define_method(cRenderer, "draw_rounded_rect", renderer_draw_rounded_rect, -1);
     rb_define_method(cRenderer, "output_size", renderer_output_size, 0);
     rb_define_method(cRenderer, "read_pixels", renderer_read_pixels, 0);
     rb_define_method(cRenderer, "create_texture", renderer_create_texture, -1);

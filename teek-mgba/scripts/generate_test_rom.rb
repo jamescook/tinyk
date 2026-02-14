@@ -25,6 +25,12 @@ rom[0x20, 4] = [0xEAFFFFFE].pack("V")
 # Game title (12 bytes at 0xA0)
 rom[0xA0, 12] = "TEEKTEST".ljust(12, "\x00")
 
+# Game code (4 bytes at 0xAC): "BTKE" (B=GBA, TK=Teek, E=English)
+rom[0xAC, 4] = "BTKE"
+
+# Maker code (2 bytes at 0xB0): "01" (Nintendo, for testing)
+rom[0xB0, 2] = "01"
+
 # Fixed value required by GBA header
 rom.setbyte(0xB2, 0x96)
 

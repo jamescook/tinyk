@@ -27,6 +27,7 @@ module Teek
         'turbo_volume_pct'   => 25,
         'keep_aspect_ratio'  => true,
         'show_fps'           => true,
+        'toast_duration'     => 1.5,
       }.freeze
 
       GAMEPAD_DEFAULTS = {
@@ -120,6 +121,26 @@ module Teek
 
       def show_fps=(val)
         global['show_fps'] = !!val
+      end
+
+      # @return [Float] toast notification duration in seconds
+      def toast_duration
+        global['toast_duration'].to_f
+      end
+
+      def toast_duration=(val)
+        val = val.to_f
+        raise ArgumentError, "toast_duration must be positive" if val <= 0
+        global['toast_duration'] = val.clamp(0.1, 10.0)
+      end
+
+      # @return [String] directory for game save files (.sav)
+      def saves_dir
+        global['saves_dir'] || self.class.default_saves_dir
+      end
+
+      def saves_dir=(val)
+        global['saves_dir'] = val.to_s
       end
 
       # -- Recent ROMs -------------------------------------------------------
@@ -229,6 +250,11 @@ module Teek
           base = ENV.fetch('XDG_CONFIG_HOME', File.join(Dir.home, '.config'))
           File.join(base, APP_NAME)
         end
+      end
+
+      # @return [String] default directory for game save files (.sav)
+      def self.default_saves_dir
+        File.join(config_dir, 'saves')
       end
 
       private

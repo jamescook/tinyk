@@ -214,6 +214,21 @@ font_render_text(int argc, VALUE *argv, VALUE self)
 }
 
 /*
+ * Teek::SDL2::Font#ascent -> Integer
+ *
+ * Maximum pixel ascent of all glyphs in this font — the distance from
+ * the baseline to the top of the tallest glyph. Use this to crop
+ * rendered text to just the visible glyph area (excluding descender
+ * padding).
+ */
+static VALUE
+font_ascent(VALUE self)
+{
+    struct sdl2_font *f = get_font(self);
+    return INT2NUM(TTF_FontAscent(f->font));
+}
+
+/*
  * Teek::SDL2::Font#measure(text) -> [width, height]
  *
  * Returns the pixel dimensions the given text would occupy when rendered.
@@ -271,6 +286,7 @@ Init_sdl2text(VALUE mTeekSDL2)
     rb_define_method(cFont, "initialize", font_initialize, 3);
     rb_define_method(cFont, "render_text", font_render_text, -1);
     rb_define_method(cFont, "measure", font_measure, 1);
+    rb_define_method(cFont, "ascent", font_ascent, 0);
     rb_define_method(cFont, "destroy", font_destroy, 0);
     rb_define_method(cFont, "destroyed?", font_destroyed_p, 0);
 }

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'fileutils'
 require 'set'
 
 module Teek
@@ -32,6 +33,7 @@ module Teek
       AUDIO_BUF_CAPACITY = (AUDIO_FREQ / GBA_FPS * 6).to_i  # ~6 frames (~100ms)
       MAX_DELTA          = 0.005
       FF_MAX_FRAMES      = 10  # cap for uncapped turbo to avoid locking event loop
+      TOAST_DURATION     = 1.5 # seconds (fallback; overridden by config)
 
       # Default keyboard → GBA button bitmask (Tk keysym → bitmask)
       DEFAULT_KEY_MAP = {
@@ -98,6 +100,8 @@ module Teek
 
         build_menu
 
+        @rom_info_window = RomInfoWindow.new(@app)
+
         @settings_window = SettingsWindow.new(@app, callbacks: {
           on_scale_change:        method(:apply_scale),
           on_volume_change:       method(:apply_volume),
@@ -111,6 +115,7 @@ module Teek
           on_turbo_speed_change:  method(:apply_turbo_speed),
           on_aspect_ratio_change: method(:apply_aspect_ratio),
           on_show_fps_change:     method(:apply_show_fps),
+          on_toast_duration_change: method(:apply_toast_duration),
           on_close:               method(:on_settings_close),
           on_save:                method(:save_config),
         })
@@ -123,6 +128,8 @@ module Teek
         @app.set_variable(SettingsWindow::VAR_SCALE, scale_label)
         @app.set_variable(SettingsWindow::VAR_ASPECT_RATIO, @keep_aspect_ratio ? '1' : '0')
         @app.set_variable(SettingsWindow::VAR_SHOW_FPS, @show_fps ? '1' : '0')
+        toast_label = "#{@config.toast_duration}s"
+        @app.set_variable(SettingsWindow::VAR_TOAST_DURATION, toast_label)
 
         # Input/emulation state (initialized before SDL2)
         @keys_held = Set.new
@@ -197,9 +204,20 @@ module Teek
         # Font for on-screen indicators (fast-forward, etc.)
         font_path = File.expand_path('../../../assets/JetBrainsMonoNL-Regular.ttf', __dir__)
         @overlay_font = File.exist?(font_path) ? @viewport.renderer.load_font(font_path, 14) : nil
+        # Crop height for inverse-blend overlays: ascent covers glyphs above
+        # baseline, plus a few pixels for common descenders (p, g, y).
+        # This excludes the very bottom rows where TTF AA residue causes
+        # artifacts under inverse blending.
+        if @overlay_font
+          ascent = @overlay_font.ascent
+          full_h = @overlay_font.measure('p')[1]
+          @overlay_crop_h = [ascent + (full_h - ascent) / 2, full_h - 1].min
+        end
         @ff_label_tex = nil
         @fps_tex = nil
         @fps_shadow_tex = nil
+        @toast_tex = nil
+        @toast_expires = 0
 
         # Custom blend mode: white text inverts the background behind it.
         # dstRGB = (1 - dstRGB) * srcRGB + dstRGB * (1 - srcA)
@@ -237,6 +255,14 @@ module Teek
         @app.update
 
         animate
+      end
+
+      def show_rom_info
+        return unless @core && !@core.destroyed?
+        saves = @config.saves_dir
+        sav_name = File.basename(@rom_path, File.extname(@rom_path)) + '.sav'
+        sav_path = File.join(saves, sav_name)
+        @rom_info_window.show(@core, rom_path: @rom_path, save_path: sav_path)
       end
 
       def show_settings
@@ -519,6 +545,10 @@ module Teek
         @app.command(view_menu, :add, :command,
                      label: 'Fullscreen', accelerator: 'F11',
                      command: proc { toggle_fullscreen })
+        @app.command(view_menu, :add, :command,
+                     label: 'ROM Info...', state: :disabled,
+                     command: proc { show_rom_info })
+        @view_menu = view_menu
 
         # Emulation menu
         @emu_menu = "#{menubar}.emu"
@@ -579,6 +609,10 @@ module Teek
         destroy_fps_overlay unless @show_fps
       end
 
+      def apply_toast_duration(secs)
+        @config.toast_duration = secs
+      end
+
       def toggle_show_fps
         @show_fps = !@show_fps
         destroy_fps_overlay unless @show_fps
@@ -594,14 +628,87 @@ module Teek
         tex
       end
 
-      # Draw an inverse overlay texture at (x, y), cropping the font's
-      # descender area (bottom ~20%) which has alpha artifacts.
+      # Draw an inverse overlay texture at (x, y), cropping to the font's
+      # ascent height (excludes descender area which has alpha artifacts
+      # visible under inverse blending).
       def draw_inverse_tex(r, tex, x, y)
         return unless tex
         tw = tex.width
-        th = (tex.height * 0.8).to_i
+        th = @overlay_crop_h || tex.height
         r.copy(tex, [0, 0, tw, th], [x, y, tw, th])
       end
+
+      # -- Toast notifications --------------------------------------------------
+
+      TOAST_PAD_X = 14
+      TOAST_PAD_Y = 8
+      TOAST_RADIUS = 8
+
+      # Show a brief GBA-style dialog box notification at the bottom of the
+      # game viewport. One toast at a time; new toasts replace the old one.
+      # The background is pre-rendered in C with anti-aliased rounded corners.
+      def show_toast(message, duration: nil)
+        destroy_toast
+        return unless @overlay_font
+
+        duration ||= @config.toast_duration
+        @toast_text_tex = @overlay_font.render_text(message, 255, 255, 255)
+        tw = @toast_text_tex.width
+        th = @overlay_crop_h || @toast_text_tex.height
+
+        box_w = tw + TOAST_PAD_X * 2
+        box_h = th + TOAST_PAD_Y * 2
+
+        # Generate AA rounded-rect background as ARGB pixels in C
+        bg_pixels = Teek::MGBA.toast_background(box_w, box_h, TOAST_RADIUS)
+        @toast_bg_tex = @viewport.renderer.create_texture(box_w, box_h, :streaming)
+        @toast_bg_tex.update(bg_pixels)
+        @toast_bg_tex.blend_mode = :blend
+
+        @toast_box_w = box_w
+        @toast_box_h = box_h
+        @toast_text_w = tw
+        @toast_text_h = th
+        @toast_expires = Process.clock_gettime(Process::CLOCK_MONOTONIC) + duration
+      end
+
+      # Draw the current toast centered at the bottom of the game area.
+      def draw_toast(r, dest)
+        return unless @toast_bg_tex
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        if now >= @toast_expires
+          destroy_toast
+          return
+        end
+
+        # Position: bottom-center of game area, 12px from bottom
+        if dest
+          cx = dest[0] + dest[2] / 2
+          by = dest[1] + dest[3] - 12 - @toast_box_h
+        else
+          out_w, out_h = r.output_size
+          cx = out_w / 2
+          by = out_h - 12 - @toast_box_h
+        end
+        bx = cx - @toast_box_w / 2
+
+        # Background (pre-rendered with AA rounded corners)
+        r.copy(@toast_bg_tex, nil, [bx, by, @toast_box_w, @toast_box_h])
+        # White text centered in the box
+        tx = bx + (@toast_box_w - @toast_text_w) / 2
+        ty = by + (@toast_box_h - @toast_text_h) / 2
+        r.copy(@toast_text_tex, [0, 0, @toast_text_w, @toast_text_h],
+               [tx, ty, @toast_text_w, @toast_text_h])
+      end
+
+      def destroy_toast
+        @toast_bg_tex&.destroy
+        @toast_bg_tex = nil
+        @toast_text_tex&.destroy
+        @toast_text_tex = nil
+      end
+
+      # -----------------------------------------------------------------------
 
       def rebuild_fps_overlay(text)
         destroy_fps_overlay
@@ -657,12 +764,15 @@ module Teek
         end
         @stream.clear
 
-        @core = Core.new(path)
+        saves = @config.saves_dir
+        FileUtils.mkdir_p(saves) unless File.directory?(saves)
+        @core = Core.new(path, saves)
         @rom_path = path
         @paused = false
         @stream.resume
         @app.command(:place, :forget, @status_label) rescue nil
-        @app.set_window_title("mGBA — #{@core.title}")
+        @app.set_window_title("mGBA \u2014 #{@core.title}")
+        @app.command(@view_menu, :entryconfigure, 1, state: :normal)
         @fps_count = 0
         @fps_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @next_frame = @fps_time
@@ -671,6 +781,14 @@ module Teek
         @config.add_recent_rom(path)
         @config.save!
         rebuild_recent_menu
+
+        sav_name = File.basename(path, File.extname(path)) + '.sav'
+        sav_path = File.join(saves, sav_name)
+        if File.exist?(sav_path)
+          show_toast("Loaded #{sav_name}")
+        else
+          show_toast("Created #{sav_name}")
+        end
       end
 
       def open_recent_rom(path)
@@ -731,6 +849,7 @@ module Teek
             r.clear(0, 0, 0)
             r.copy(@texture, nil, dest)
             draw_fps_overlay(r, dest)
+            draw_toast(r, dest)
           end
           return
         end
@@ -854,14 +973,13 @@ module Teek
           oy = dest ? dest[1] : 0
           draw_inverse_tex(r, @ff_label_tex, ox + 4, oy + 4) if ff_indicator
           draw_fps_overlay(r, dest)
+          draw_toast(r, dest)
         end
       end
 
       def draw_fps_overlay(r, dest)
         return unless @show_fps && @fps_tex
-        tw = @fps_tex.width
-        th = (@fps_tex.height * 0.8).to_i
-        fx = (dest ? dest[0] + dest[2] : r.output_size[0]) - tw - 6
+        fx = (dest ? dest[0] + dest[2] : r.output_size[0]) - @fps_tex.width - 6
         fy = (dest ? dest[1] : 0) + 4
         draw_inverse_tex(r, @fps_tex, fx, fy)
       end
@@ -934,6 +1052,7 @@ module Teek
         @stream&.pause unless @stream&.destroyed?
         destroy_ff_label
         destroy_fps_overlay
+        destroy_toast
         @overlay_font&.destroy unless @overlay_font&.destroyed?
         @stream&.destroy unless @stream&.destroyed?
         @texture&.destroy unless @texture&.destroyed?

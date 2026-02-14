@@ -16,11 +16,15 @@ module Teek
     #   core.destroy
     class Core
 
-      # @!method initialize(rom_path)
+      # @!method initialize(rom_path, save_dir = nil)
       #   Load a GBA ROM and initialize the emulator core.
       #   Detects the platform (GBA/GB/GBC) from the file extension,
-      #   allocates video and audio buffers, and resets the CPU.
+      #   allocates video and audio buffers, resets the CPU, and autoloads
+      #   the battery save file (.sav).
+      #
       #   @param rom_path [String] path to the ROM file (.gba, .gb, .gbc)
+      #   @param save_dir [String, nil] directory for .sav files.
+      #     When +nil+, saves are stored alongside the ROM.
       #   @raise [ArgumentError] if the ROM format is unrecognized or the file cannot be opened
       #   @raise [RuntimeError] if core initialization or ROM loading fails
 
@@ -70,6 +74,29 @@ module Teek
       # @!method title
       #   Internal ROM title (up to 12 characters for GBA).
       #   @return [String]
+
+      # @!method game_code
+      #   Game code from the ROM header, prefixed with platform
+      #   (e.g. "AGB-BTKE" for GBA, "CGB-XXXX" for GBC).
+      #   @return [String]
+
+      # @!method maker_code
+      #   2-character maker/publisher code from the GBA ROM header
+      #   at offset 0xB0 (e.g. "01" for Nintendo).
+      #   Returns empty string for non-GBA ROMs.
+      #   @return [String]
+
+      # @!method checksum
+      #   CRC32 checksum of the loaded ROM.
+      #   @return [Integer]
+
+      # @!method platform
+      #   Platform string: "GBA", "GB", or "Unknown".
+      #   @return [String]
+
+      # @!method rom_size
+      #   Size of the loaded ROM in bytes.
+      #   @return [Integer]
 
       # @!method destroy
       #   Shut down the emulator core and free all resources.

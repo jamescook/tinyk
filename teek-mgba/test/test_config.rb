@@ -333,6 +333,31 @@ class TestMGBAConfig < Minitest::Test
     refute c2.show_fps?
   end
 
+  # -- Saves dir -----------------------------------------------------------
+
+  def test_defaults_saves_dir
+    assert new_config.saves_dir.end_with?("teek-mgba/saves")
+  end
+
+  def test_set_saves_dir
+    c = new_config
+    c.saves_dir = "/custom/saves"
+    assert_equal "/custom/saves", c.saves_dir
+  end
+
+  def test_round_trip_saves_dir
+    c = new_config
+    c.saves_dir = "/my/saves"
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_equal "/my/saves", c2.saves_dir
+  end
+
+  def test_default_saves_dir_class_method
+    assert Teek::MGBA::Config.default_saves_dir.end_with?("teek-mgba/saves")
+  end
+
   # -- Recent ROMs ---------------------------------------------------------
 
   def test_recent_roms_default_empty

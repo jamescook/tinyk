@@ -20,6 +20,7 @@ module Teek
       TURBO_COMBO = "#{NB}.video.turbo_row.turbo_combo"
       ASPECT_CHECK = "#{NB}.video.aspect_row.aspect"
       SHOW_FPS_CHECK = "#{NB}.video.fps_row.fps_check"
+      TOAST_COMBO = "#{NB}.video.toast_row.toast_combo"
       VOLUME_SCALE = "#{NB}.audio.vol_row.vol_scale"
       MUTE_CHECK = "#{NB}.audio.mute_row.mute"
 
@@ -54,6 +55,7 @@ module Teek
       VAR_DEADZONE = '::mgba_deadzone'
       VAR_ASPECT_RATIO = '::mgba_aspect_ratio'
       VAR_SHOW_FPS = '::mgba_show_fps'
+      VAR_TOAST_DURATION = '::mgba_toast_duration'
 
       # GBA button → widget path mapping
       GBA_BUTTONS = {
@@ -95,7 +97,7 @@ module Teek
 
         app.command(:toplevel, TOP)
         app.command(:wm, 'title', TOP, 'Settings')
-        app.command(:wm, 'geometry', TOP, '700x360')
+        app.command(:wm, 'geometry', TOP, '700x390')
         app.command(:wm, 'resizable', TOP, 0, 0)
         app.command(:wm, 'transient', TOP, '.')  # child of main window
 
@@ -251,6 +253,32 @@ module Teek
             mark_dirty
           })
         @app.command(:pack, SHOW_FPS_CHECK, side: :left)
+
+        # Toast duration
+        toast_row = "#{frame}.toast_row"
+        @app.command('ttk::frame', toast_row)
+        @app.command(:pack, toast_row, fill: :x, padx: 10, pady: 5)
+
+        @app.command('ttk::label', "#{toast_row}.lbl", text: 'Toast Duration:')
+        @app.command(:pack, "#{toast_row}.lbl", side: :left)
+
+        @app.set_variable(VAR_TOAST_DURATION, '1.5s')
+        @app.command('ttk::combobox', TOAST_COMBO,
+          textvariable: VAR_TOAST_DURATION,
+          values: Teek.make_list('0.5s', '1s', '1.5s', '2s', '3s', '5s', '10s'),
+          state: :readonly,
+          width: 5)
+        @app.command(:pack, TOAST_COMBO, side: :right)
+
+        @app.command(:bind, TOAST_COMBO, '<<ComboboxSelected>>',
+          proc { |*|
+            val = @app.get_variable(VAR_TOAST_DURATION)
+            secs = val.to_f
+            if secs > 0
+              @callbacks[:on_toast_duration_change]&.call(secs)
+              mark_dirty
+            end
+          })
       end
 
       def setup_audio_tab

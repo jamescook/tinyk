@@ -7,6 +7,7 @@ require "teek_mgba"
 require_relative "mgba/config"
 require_relative "mgba/core"
 require_relative "mgba/settings_window"
+require_relative "mgba/rom_info_window"
 require_relative "mgba/player"
 
 module Teek
