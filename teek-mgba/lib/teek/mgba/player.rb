@@ -34,6 +34,8 @@ module Teek
       MAX_DELTA          = 0.005
       FF_MAX_FRAMES      = 10  # cap for uncapped turbo to avoid locking event loop
       TOAST_DURATION     = 1.5 # seconds (fallback; overridden by config)
+      SAVE_STATE_DEBOUNCE_DEFAULT = 3.0 # seconds; overridden by config
+      SAVE_STATE_SLOTS    = 10
 
       # Default keyboard → GBA button bitmask (Tk keysym → bitmask)
       DEFAULT_KEY_MAP = {
@@ -91,6 +93,10 @@ module Teek
         @show_fps = @config.show_fps?
         @fast_forward = false
         @fullscreen = false
+        @quick_save_slot = @config.quick_save_slot
+        @save_state_backup = @config.save_state_backup?
+        @last_save_time = 0
+        @state_dir = nil  # set when ROM loaded
         load_keyboard_config
 
         win_w = GBA_W * @scale
@@ -116,6 +122,8 @@ module Teek
           on_aspect_ratio_change: method(:apply_aspect_ratio),
           on_show_fps_change:     method(:apply_show_fps),
           on_toast_duration_change: method(:apply_toast_duration),
+          on_quick_slot_change:   method(:apply_quick_slot),
+          on_backup_change:       method(:apply_backup),
           on_close:               method(:on_settings_close),
           on_save:                method(:save_config),
         })
@@ -130,6 +138,8 @@ module Teek
         @app.set_variable(SettingsWindow::VAR_SHOW_FPS, @show_fps ? '1' : '0')
         toast_label = "#{@config.toast_duration}s"
         @app.set_variable(SettingsWindow::VAR_TOAST_DURATION, toast_label)
+        @app.set_variable(SettingsWindow::VAR_QUICK_SLOT, @quick_save_slot.to_s)
+        @app.set_variable(SettingsWindow::VAR_SS_BACKUP, @save_state_backup ? '1' : '0')
 
         # Input/emulation state (initialized before SDL2)
         @keys_held = Set.new
@@ -265,6 +275,94 @@ module Teek
         @rom_info_window.show(@core, rom_path: @rom_path, save_path: sav_path)
       end
 
+      # -- Save states ---------------------------------------------------------
+
+      # Build per-ROM state directory path using game code + CRC32.
+      # e.g. states/AGB-BTKE-A1B2C3D4/
+      def state_dir_for_rom(core)
+        code = core.game_code.gsub(/[^a-zA-Z0-9_.-]/, '_')
+        crc  = format('%08X', core.checksum)
+        File.join(@config.states_dir, "#{code}-#{crc}")
+      end
+
+      def state_path(slot)
+        File.join(@state_dir, "state#{slot}.ss")
+      end
+
+      def screenshot_path(slot)
+        File.join(@state_dir, "state#{slot}.png")
+      end
+
+      def save_state(slot)
+        return unless @core && !@core.destroyed?
+
+        now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        if now - @last_save_time < @config.save_state_debounce
+          show_toast("Save blocked (too fast)")
+          return
+        end
+
+        FileUtils.mkdir_p(@state_dir) unless File.directory?(@state_dir)
+
+        # Backup rotation: existing files → .bak (if enabled)
+        ss = state_path(slot)
+        png = screenshot_path(slot)
+        if @save_state_backup
+          File.rename(ss, "#{ss}.bak") if File.exist?(ss)
+          File.rename(png, "#{png}.bak") if File.exist?(png)
+        end
+
+        if @core.save_state_to_file(ss)
+          @last_save_time = now
+          save_screenshot(png)
+          show_toast("State saved to slot #{slot}")
+        else
+          show_toast("Failed to save state")
+        end
+      end
+
+      def load_state(slot)
+        return unless @core && !@core.destroyed?
+
+        ss = state_path(slot)
+        unless File.exist?(ss)
+          show_toast("No state in slot #{slot}")
+          return
+        end
+
+        if @core.load_state_from_file(ss)
+          show_toast("State loaded from slot #{slot}")
+        else
+          show_toast("Failed to load state")
+        end
+      end
+
+      # Save a PNG screenshot of the current frame via Tk photo image.
+      # Creates a temporary photo, writes ARGB pixels via C, then
+      # uses Tk's built-in PNG format handler to write the file.
+      def save_screenshot(path)
+        return unless @core && !@core.destroyed?
+
+        pixels = @core.video_buffer_argb
+        photo_name = "__teek_ss_#{object_id}"
+
+        @app.tcl_eval("image create photo #{photo_name} -width #{GBA_W} -height #{GBA_H}")
+        @app.interp.photo_put_block(photo_name, pixels, GBA_W, GBA_H, format: :argb)
+        @app.tcl_eval("#{photo_name} write {#{path}} -format png")
+        @app.tcl_eval("image delete #{photo_name}")
+      rescue StandardError
+        # Screenshot is optional — don't fail the save state
+        @app.tcl_eval("image delete #{photo_name}") rescue nil
+      end
+
+      def quick_save
+        save_state(@quick_save_slot)
+      end
+
+      def quick_load
+        load_state(@quick_save_slot)
+      end
+
       def show_settings
         @was_paused_before_settings = @paused
         toggle_fast_forward if @fast_forward
@@ -283,6 +381,8 @@ module Teek
         @config.turbo_speed = @turbo_speed
         @config.keep_aspect_ratio = @keep_aspect_ratio
         @config.show_fps = @show_fps
+        @config.quick_save_slot = @quick_save_slot
+        @config.save_state_backup = @save_state_backup
 
         # Save keyboard mappings under sentinel GUID
         @key_map.each do |keysym, bit|
@@ -489,6 +589,10 @@ module Teek
             toggle_fullscreen
           elsif k == 'F3'
             toggle_show_fps
+          elsif k == 'F5'
+            quick_save
+          elsif k == 'F8'
+            quick_load
           else
             @keys_held.add(k)
           end
@@ -561,6 +665,13 @@ module Teek
         @app.command(@emu_menu, :add, :command,
                      label: 'Reset', accelerator: 'Cmd+R',
                      command: proc { reset_core })
+        @app.command(@emu_menu, :add, :separator)
+        @app.command(@emu_menu, :add, :command,
+                     label: 'Quick Save', accelerator: 'F5',
+                     command: proc { quick_save })
+        @app.command(@emu_menu, :add, :command,
+                     label: 'Quick Load', accelerator: 'F8',
+                     command: proc { quick_load })
 
         @app.command(:bind, '.', '<Command-r>', proc { reset_core })
       end
@@ -611,6 +722,14 @@ module Teek
 
       def apply_toast_duration(secs)
         @config.toast_duration = secs
+      end
+
+      def apply_quick_slot(slot)
+        @quick_save_slot = slot.to_i.clamp(1, 10)
+      end
+
+      def apply_backup(enabled)
+        @save_state_backup = !!enabled
       end
 
       def toggle_show_fps
@@ -768,6 +887,7 @@ module Teek
         FileUtils.mkdir_p(saves) unless File.directory?(saves)
         @core = Core.new(path, saves)
         @rom_path = path
+        @state_dir = state_dir_for_rom(@core)
         @paused = false
         @stream.resume
         @app.command(:place, :forget, @status_label) rescue nil

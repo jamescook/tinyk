@@ -1,9 +1,11 @@
 #include "teek_mgba.h"
 #include <mgba/core/config.h>
+#include <mgba/core/serialize.h>
 #include <ruby/thread.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fcntl.h>
 
 /*
  * Forward declarations for blip_buf (audio buffer API).
@@ -438,6 +440,52 @@ mgba_core_maker_code(VALUE self)
 }
 
 /* --------------------------------------------------------- */
+/* Core#save_state_to_file(path)                             */
+/* Save the complete emulator state to a file.               */
+/* Returns true on success, false on failure.                */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_save_state_to_file(VALUE self, VALUE rb_path)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    Check_Type(rb_path, T_STRING);
+    const char *path = StringValueCStr(rb_path);
+
+    struct VFile *vf = VFileOpen(path, O_CREAT | O_TRUNC | O_WRONLY);
+    if (!vf) {
+        rb_raise(rb_eRuntimeError, "Cannot open state file for writing: %s", path);
+    }
+
+    bool ok = mCoreSaveStateNamed(mc->core, vf, SAVESTATE_ALL);
+    vf->close(vf);
+    return ok ? Qtrue : Qfalse;
+}
+
+/* --------------------------------------------------------- */
+/* Core#load_state_from_file(path)                           */
+/* Load emulator state from a file.                          */
+/* Returns true on success, false on failure.                */
+/* --------------------------------------------------------- */
+
+static VALUE
+mgba_core_load_state_from_file(VALUE self, VALUE rb_path)
+{
+    struct mgba_core *mc = get_mgba_core(self);
+    Check_Type(rb_path, T_STRING);
+    const char *path = StringValueCStr(rb_path);
+
+    struct VFile *vf = VFileOpen(path, O_RDONLY);
+    if (!vf) {
+        return Qfalse;
+    }
+
+    bool ok = mCoreLoadStateNamed(mc->core, vf, SAVESTATE_ALL);
+    vf->close(vf);
+    return ok ? Qtrue : Qfalse;
+}
+
+/* --------------------------------------------------------- */
 /* Core#destroy, Core#destroyed?                             */
 /* --------------------------------------------------------- */
 
@@ -602,6 +650,8 @@ Init_teek_mgba(void)
     rb_define_method(cCore, "checksum",    mgba_core_checksum, 0);
     rb_define_method(cCore, "platform",    mgba_core_platform, 0);
     rb_define_method(cCore, "rom_size",    mgba_core_rom_size, 0);
+    rb_define_method(cCore, "save_state_to_file", mgba_core_save_state_to_file, 1);
+    rb_define_method(cCore, "load_state_from_file", mgba_core_load_state_from_file, 1);
     rb_define_method(cCore, "destroy",     mgba_core_destroy, 0);
     rb_define_method(cCore, "destroyed?",  mgba_core_destroyed_p, 0);
 

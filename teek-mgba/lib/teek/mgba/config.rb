@@ -28,6 +28,9 @@ module Teek
         'keep_aspect_ratio'  => true,
         'show_fps'           => true,
         'toast_duration'     => 1.5,
+        'save_state_debounce' => 3.0,
+        'quick_save_slot'    => 1,
+        'save_state_backup'  => true,
       }.freeze
 
       GAMEPAD_DEFAULTS = {
@@ -143,6 +146,42 @@ module Teek
         global['saves_dir'] = val.to_s
       end
 
+      # @return [String] directory for save state files (.ss1, .ss2, etc.)
+      def states_dir
+        global['states_dir'] || self.class.default_states_dir
+      end
+
+      def states_dir=(val)
+        global['states_dir'] = val.to_s
+      end
+
+      # @return [Float] debounce interval in seconds between save state operations (hidden setting)
+      def save_state_debounce
+        global['save_state_debounce'].to_f
+      end
+
+      def save_state_debounce=(val)
+        global['save_state_debounce'] = val.to_f.clamp(0.0, 30.0)
+      end
+
+      # @return [Integer] quick save/load slot (1-10)
+      def quick_save_slot
+        global['quick_save_slot']
+      end
+
+      def quick_save_slot=(val)
+        global['quick_save_slot'] = val.to_i.clamp(1, 10)
+      end
+
+      # @return [Boolean] whether to create .bak files when overwriting save states
+      def save_state_backup?
+        global['save_state_backup']
+      end
+
+      def save_state_backup=(val)
+        global['save_state_backup'] = !!val
+      end
+
       # -- Recent ROMs -------------------------------------------------------
 
       MAX_RECENT_ROMS = 5
@@ -255,6 +294,11 @@ module Teek
       # @return [String] default directory for game save files (.sav)
       def self.default_saves_dir
         File.join(config_dir, 'saves')
+      end
+
+      # @return [String] default directory for save state files
+      def self.default_states_dir
+        File.join(config_dir, 'states')
       end
 
       private

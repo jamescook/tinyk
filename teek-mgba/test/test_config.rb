@@ -420,6 +420,112 @@ class TestMGBAConfig < Minitest::Test
     assert_equal ["/roms/b.gba", "/roms/a.gba"], c2.recent_roms
   end
 
+  # -- States dir ----------------------------------------------------------
+
+  def test_defaults_states_dir
+    assert new_config.states_dir.end_with?("teek-mgba/states")
+  end
+
+  def test_set_states_dir
+    c = new_config
+    c.states_dir = "/custom/states"
+    assert_equal "/custom/states", c.states_dir
+  end
+
+  def test_round_trip_states_dir
+    c = new_config
+    c.states_dir = "/my/states"
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_equal "/my/states", c2.states_dir
+  end
+
+  def test_default_states_dir_class_method
+    assert Teek::MGBA::Config.default_states_dir.end_with?("teek-mgba/states")
+  end
+
+  # -- Save state debounce -------------------------------------------------
+
+  def test_defaults_save_state_debounce
+    assert_in_delta 3.0, new_config.save_state_debounce, 0.01
+  end
+
+  def test_set_save_state_debounce
+    c = new_config
+    c.save_state_debounce = 5.0
+    assert_in_delta 5.0, c.save_state_debounce, 0.01
+  end
+
+  def test_save_state_debounce_clamps
+    c = new_config
+    c.save_state_debounce = -1.0
+    assert_in_delta 0.0, c.save_state_debounce, 0.01
+    c.save_state_debounce = 99.0
+    assert_in_delta 30.0, c.save_state_debounce, 0.01
+  end
+
+  def test_round_trip_save_state_debounce
+    c = new_config
+    c.save_state_debounce = 1.5
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_in_delta 1.5, c2.save_state_debounce, 0.01
+  end
+
+  # -- Quick save slot -----------------------------------------------------
+
+  def test_defaults_quick_save_slot
+    assert_equal 1, new_config.quick_save_slot
+  end
+
+  def test_set_quick_save_slot
+    c = new_config
+    c.quick_save_slot = 5
+    assert_equal 5, c.quick_save_slot
+  end
+
+  def test_quick_save_slot_clamps
+    c = new_config
+    c.quick_save_slot = 0
+    assert_equal 1, c.quick_save_slot
+    c.quick_save_slot = 99
+    assert_equal 10, c.quick_save_slot
+  end
+
+  def test_round_trip_quick_save_slot
+    c = new_config
+    c.quick_save_slot = 7
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    assert_equal 7, c2.quick_save_slot
+  end
+
+  # -- Save state backup ---------------------------------------------------
+
+  def test_defaults_save_state_backup
+    assert new_config.save_state_backup?
+  end
+
+  def test_set_save_state_backup
+    c = new_config
+    c.save_state_backup = false
+    refute c.save_state_backup?
+    c.save_state_backup = true
+    assert c.save_state_backup?
+  end
+
+  def test_round_trip_save_state_backup
+    c = new_config
+    c.save_state_backup = false
+    c.save!
+
+    c2 = Teek::MGBA::Config.new(path: @path)
+    refute c2.save_state_backup?
+  end
+
   # -- Edge cases -----------------------------------------------------------
 
   def test_corrupt_json_falls_back_to_defaults

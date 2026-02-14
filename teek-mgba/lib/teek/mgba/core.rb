@@ -98,6 +98,18 @@ module Teek
       #   Size of the loaded ROM in bytes.
       #   @return [Integer]
 
+      # @!method save_state_to_file(path)
+      #   Save the complete emulator state (CPU, memory, audio, video) to a file.
+      #   Includes battery save data and RTC state.
+      #   @param path [String] destination file path
+      #   @return [Boolean] true on success
+      #   @raise [RuntimeError] if the file cannot be opened for writing
+
+      # @!method load_state_from_file(path)
+      #   Restore emulator state from a previously saved state file.
+      #   @param path [String] state file path
+      #   @return [Boolean] true on success, false if file doesn't exist or is invalid
+
       # @!method destroy
       #   Shut down the emulator core and free all resources.
       #   Further method calls will raise.

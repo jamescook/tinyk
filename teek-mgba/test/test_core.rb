@@ -103,6 +103,8 @@ class TestMGBACore < Minitest::Test
     assert_raises(RuntimeError) { @core.checksum }
     assert_raises(RuntimeError) { @core.platform }
     assert_raises(RuntimeError) { @core.rom_size }
+    assert_raises(RuntimeError) { @core.save_state_to_file("/tmp/x.ss") }
+    assert_raises(RuntimeError) { @core.load_state_from_file("/tmp/x.ss") }
   end
 
   # -- Frame emulation ---------------------------------------------------------
@@ -177,6 +179,77 @@ class TestMGBACore < Minitest::Test
     core = Teek::MGBA::Core.new(TEST_ROM)
     core.run_frame
     core.destroy
+  end
+
+  # -- Save states -------------------------------------------------------------
+
+  def test_save_state_to_file
+    @core.run_frame
+    Dir.mktmpdir("teek-states") do |dir|
+      path = File.join(dir, "test.ss1")
+      assert @core.save_state_to_file(path), "save_state_to_file should return true"
+      assert File.exist?(path), "State file should exist"
+      assert File.size(path) > 0, "State file should not be empty"
+    end
+  end
+
+  def test_load_state_from_file
+    # Run several frames to reach a known state
+    10.times { @core.run_frame }
+
+    Dir.mktmpdir("teek-states") do |dir|
+      path = File.join(dir, "test.ss1")
+
+      # Save state at frame 10
+      assert @core.save_state_to_file(path)
+
+      # Run more frames to advance past the saved state
+      10.times { @core.run_frame }
+
+      # Load state — should succeed and restore core to a valid state
+      assert @core.load_state_from_file(path), "load_state_from_file should return true"
+
+      # Core should be functional after loading: run a frame without crashing
+      @core.run_frame
+      buf = @core.video_buffer
+      assert_equal 240 * 160 * 4, buf.bytesize, "Video buffer should be valid after state load"
+    end
+  end
+
+  def test_load_state_nonexistent_returns_false
+    result = @core.load_state_from_file("/no/such/state.ss1")
+    refute result, "load_state_from_file should return false for missing file"
+  end
+
+  def test_save_state_raises_on_bad_path
+    @core.run_frame
+    assert_raises(RuntimeError) { @core.save_state_to_file("/no/such/dir/state.ss1") }
+  end
+
+  def test_save_state_round_trip_preserves_state
+    # Run to frame 10, save, continue to frame 20, load, run 1 frame.
+    # If state was truly restored, the frame after load should match
+    # frame 11 from a fresh run.
+    10.times { @core.run_frame }
+
+    Dir.mktmpdir("teek-states") do |dir|
+      path = File.join(dir, "test.ss1")
+      assert @core.save_state_to_file(path)
+
+      # Capture frame 11 from saved state
+      @core.run_frame
+      buf_frame_11 = @core.video_buffer
+
+      # Reload state (back to frame 10)
+      assert @core.load_state_from_file(path)
+
+      # Run 1 frame from restored state (should be frame 11 again)
+      @core.run_frame
+      buf_restored_11 = @core.video_buffer
+
+      assert_equal buf_frame_11, buf_restored_11,
+        "Frame after load should match frame after save point"
+    end
   end
 
   # -- Error handling ----------------------------------------------------------

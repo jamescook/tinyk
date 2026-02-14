@@ -43,6 +43,11 @@ module Teek
       GP_BTN_START  = "#{GAMEPAD_TAB}.buttons.center.btn_start"
       GP_BTN_SELECT = "#{GAMEPAD_TAB}.buttons.center.btn_select"
 
+      # Save States tab widget paths
+      SS_TAB         = "#{NB}.savestates"
+      SS_SLOT_COMBO  = "#{SS_TAB}.slot_row.slot_combo"
+      SS_BACKUP_CHECK = "#{SS_TAB}.backup_row.backup_check"
+
       # Bottom bar
       SAVE_BTN = "#{TOP}.save_btn"
 
@@ -56,6 +61,8 @@ module Teek
       VAR_ASPECT_RATIO = '::mgba_aspect_ratio'
       VAR_SHOW_FPS = '::mgba_show_fps'
       VAR_TOAST_DURATION = '::mgba_toast_duration'
+      VAR_QUICK_SLOT     = '::mgba_quick_slot'
+      VAR_SS_BACKUP      = '::mgba_ss_backup'
 
       # GBA button → widget path mapping
       GBA_BUTTONS = {
@@ -160,6 +167,7 @@ module Teek
         setup_video_tab
         setup_audio_tab
         setup_gamepad_tab
+        setup_save_states_tab
 
         # Save button — disabled until a setting changes
         @app.command('ttk::button', SAVE_BTN, text: 'Save', state: :disabled,
@@ -441,6 +449,54 @@ module Teek
 
         # Start in keyboard mode — dead zone disabled
         set_deadzone_enabled(false)
+      end
+
+      def setup_save_states_tab
+        frame = SS_TAB
+        @app.command('ttk::frame', frame)
+        @app.command(NB, 'add', frame, text: 'Save States')
+
+        # Quick Save Slot
+        slot_row = "#{frame}.slot_row"
+        @app.command('ttk::frame', slot_row)
+        @app.command(:pack, slot_row, fill: :x, padx: 10, pady: [15, 5])
+
+        @app.command('ttk::label', "#{slot_row}.lbl", text: 'Quick Save Slot:')
+        @app.command(:pack, "#{slot_row}.lbl", side: :left)
+
+        slot_values = (1..10).map(&:to_s)
+        @app.set_variable(VAR_QUICK_SLOT, '1')
+        @app.command('ttk::combobox', SS_SLOT_COMBO,
+          textvariable: VAR_QUICK_SLOT,
+          values: Teek.make_list(*slot_values),
+          state: :readonly,
+          width: 5)
+        @app.command(:pack, SS_SLOT_COMBO, side: :right)
+
+        @app.command(:bind, SS_SLOT_COMBO, '<<ComboboxSelected>>',
+          proc { |*|
+            val = @app.get_variable(VAR_QUICK_SLOT).to_i
+            if val >= 1 && val <= 10
+              @callbacks[:on_quick_slot_change]&.call(val)
+              mark_dirty
+            end
+          })
+
+        # Backup rotation checkbox
+        backup_row = "#{frame}.backup_row"
+        @app.command('ttk::frame', backup_row)
+        @app.command(:pack, backup_row, fill: :x, padx: 10, pady: 5)
+
+        @app.set_variable(VAR_SS_BACKUP, '1')
+        @app.command('ttk::checkbutton', SS_BACKUP_CHECK,
+          text: 'Keep backup of previous save state',
+          variable: VAR_SS_BACKUP,
+          command: proc { |*|
+            enabled = @app.get_variable(VAR_SS_BACKUP) == '1'
+            @callbacks[:on_backup_change]&.call(enabled)
+            mark_dirty
+          })
+        @app.command(:pack, SS_BACKUP_CHECK, side: :left)
       end
 
       def make_gba_button(path, parent, gba_btn, side: :left)
