@@ -55,7 +55,7 @@ module Teek
       private
 
       def build_ui
-        build_toplevel('Save States', geometry: '700x280') do
+        build_toplevel('Save States', geometry: '700x380') do
           build_grid
         end
         @built = true
@@ -64,7 +64,11 @@ module Teek
       def build_grid
         grid = "#{TOP}.grid"
         @app.command('ttk::frame', grid, padding: 8)
-        @app.command(:pack, grid, fill: :both, expand: 1)
+        @app.command(:pack, grid, fill: :x)
+
+        # Blank image keeps the label in pixel-sizing mode even without a screenshot
+        @blank_thumb = "__teek_ss_blank"
+        @app.tcl_eval("image create photo #{@blank_thumb} -width #{THUMB_W} -height #{THUMB_H}")
 
         SLOTS.times do |i|
           slot = i + 1
@@ -73,12 +77,12 @@ module Teek
 
           cell = "#{grid}.slot#{slot}"
           @app.command('ttk::frame', cell, relief: :groove, borderwidth: 2, padding: 4)
-          @app.command(:grid, cell, row: row, column: col, padx: 4, pady: 4, sticky: :nsew)
+          @app.command(:grid, cell, row: row, column: col, padx: 4, pady: 4, sticky: :new)
 
-          # Thumbnail label (shows image or "Empty" text)
+          # Thumbnail label (shows image or "Empty" text overlay)
           thumb = "#{cell}.thumb"
           @app.command(:label, thumb,
-            width: THUMB_W, height: THUMB_H,
+            image: @blank_thumb, compound: :center,
             bg: '#1a1a2e', fg: '#666666',
             text: 'Empty', anchor: :center,
             font: '{TkDefaultFont} 9')
@@ -107,6 +111,11 @@ module Teek
         # Make columns expand evenly
         COLS.times { |c| @app.command(:grid, :columnconfigure, grid, c, weight: 1) }
 
+        # Spacer absorbs leftover vertical space so cells don't stretch
+        spacer = "#{TOP}.spacer"
+        @app.command('ttk::frame', spacer)
+        @app.command(:pack, spacer, fill: :both, expand: 1)
+
         # Close button
         close_btn = "#{TOP}.close_btn"
         @app.command('ttk::button', close_btn, text: 'Close', command: proc { hide })
@@ -127,9 +136,10 @@ module Teek
           if populated && File.exist?(png_path)
             load_thumbnail(slot, png_path)
           else
-            # Clear thumbnail — show Empty or just slot text
+            # Clear thumbnail — show Empty or just slot text on blank image
             @app.command(cell[:thumb], :configure,
-              image: '', text: populated ? 'No preview' : 'Empty')
+              image: @blank_thumb, compound: :center,
+              text: populated ? 'No preview' : 'Empty')
           end
 
           # Timestamp
@@ -158,14 +168,14 @@ module Teek
         @app.tcl_eval("image delete #{src_name}")
 
         @app.command(@cells[slot][:thumb], :configure,
-          image: photo_name, text: '')
+          image: photo_name, compound: :none, text: '')
         @photos[slot] = photo_name
       rescue StandardError => e
         warn "SaveStatePicker: failed to load thumbnail for slot #{slot}: #{e.message}"
         @app.tcl_eval("image delete #{src_name}") rescue nil
         @app.tcl_eval("image delete #{photo_name}") rescue nil
         @app.command(@cells[slot][:thumb], :configure,
-          image: '', text: 'No preview')
+          image: @blank_thumb, compound: :center, text: 'No preview')
       end
 
       def cleanup_photos
