@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- API docs "View source" now displays the actual C source for C-backed methods (previously showed nothing)
+
 ## [0.1.3] - 2026-02-11
 
 ### Added
