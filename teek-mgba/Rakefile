@@ -1,0 +1,17 @@
+# frozen_string_literal: true
+
+require 'rbconfig'
+
+namespace :mgba do
+  desc "Compile teek-mgba C extension"
+  task :compile do
+    ext_dir = File.expand_path('ext/teek_mgba', __dir__)
+    lib_dir = File.expand_path('lib', __dir__)
+    so_name = "teek_mgba.#{RbConfig::CONFIG['DLEXT']}"
+    Dir.chdir(ext_dir) do
+      sh RbConfig.ruby, 'extconf.rb' unless File.exist?('Makefile')
+      sh 'make'
+    end
+    cp File.join(ext_dir, so_name), lib_dir
+  end
+end

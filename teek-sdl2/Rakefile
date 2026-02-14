@@ -1,0 +1,17 @@
+# frozen_string_literal: true
+
+require 'rbconfig'
+
+namespace :sdl2 do
+  desc "Compile teek-sdl2 C extension"
+  task :compile do
+    ext_dir = File.expand_path('ext/teek_sdl2', __dir__)
+    lib_dir = File.expand_path('lib', __dir__)
+    so_name = "teek_sdl2.#{RbConfig::CONFIG['DLEXT']}"
+    Dir.chdir(ext_dir) do
+      sh RbConfig.ruby, 'extconf.rb' unless File.exist?('Makefile')
+      sh 'make'
+    end
+    cp File.join(ext_dir, so_name), lib_dir
+  end
+end

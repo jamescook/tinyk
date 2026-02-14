@@ -54,7 +54,7 @@ jobs:
         key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'teek-sdl2/ext/**/*.c', 'teek-sdl2/ext/**/*.h', 'teek-mgba/ext/**/*.c', 'teek-mgba/ext/**/*.h', 'Rakefile', 'Gemfile.lock') }}
 
     - name: Compile native extensions
-      run: bundle exec rake compile compile:teek_sdl2 compile:teek_mgba
+      run: bundle exec rake compile sdl2:compile mgba:compile
 
     - name: Run tests
       timeout-minutes: 5

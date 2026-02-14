@@ -2,6 +2,10 @@ require "bundler/gem_tasks"
 require 'rake/testtask'
 require 'rake/clean'
 
+# Sub-project Rakefiles (define sdl2:compile, mgba:compile)
+import 'teek-sdl2/Rakefile'
+import 'teek-mgba/Rakefile'
+
 # Documentation tasks - all doc gems are in docs_site/Gemfile
 namespace :docs do
   desc "Install docs dependencies (docs_site/Gemfile)"
@@ -113,25 +117,14 @@ CLOBBER.include('teek-mgba/lib/*.bundle', 'teek-mgba/lib/*.so', 'teek-mgba/ext/*
 # Clean coverage artifacts before test runs to prevent accumulation
 CLEAN.include('coverage/.resultset.json', 'coverage/results')
 
-# Conditionally load rake-compiler
+# rake compile = teek core only (tcltklib)
 if Gem::Specification.find_all_by_name('rake-compiler').any?
   require 'rake/extensiontask'
+
   Rake::ExtensionTask.new do |ext|
     ext.name = 'tcltklib'
     ext.ext_dir = 'ext/teek'
     ext.lib_dir = 'lib'
-  end
-
-  Rake::ExtensionTask.new do |ext|
-    ext.name = 'teek_sdl2'
-    ext.ext_dir = 'teek-sdl2/ext/teek_sdl2'
-    ext.lib_dir = 'teek-sdl2/lib'
-  end
-
-  Rake::ExtensionTask.new do |ext|
-    ext.name = 'teek_mgba'
-    ext.ext_dir = 'teek-mgba/ext/teek_mgba'
-    ext.lib_dir = 'teek-mgba/lib'
   end
 end
 
@@ -226,29 +219,23 @@ def detect_platform
 end
 
 namespace :sdl2 do
-  desc "Compile teek-sdl2 C extension"
-  task compile: 'compile:teek_sdl2'
-
   Rake::TestTask.new(:test) do |t|
     t.libs << 'teek-sdl2/test' << 'teek-sdl2/lib'
     t.test_files = FileList['teek-sdl2/test/**/test_*.rb'] - FileList['teek-sdl2/test/test_helper.rb']
     t.ruby_opts << '-r test_helper'
     t.verbose = true
   end
-  task test: 'compile:teek_sdl2'
+  task test: 'sdl2:compile'
 end
 
 namespace :mgba do
-  desc "Compile teek-mgba C extension"
-  task compile: 'compile:teek_mgba'
-
   Rake::TestTask.new(:test) do |t|
     t.libs << 'teek-mgba/test' << 'teek-mgba/lib' << 'teek-sdl2/lib'
     t.test_files = FileList['teek-mgba/test/**/test_*.rb'] - FileList['teek-mgba/test/test_helper.rb']
     t.ruby_opts << '-r test_helper'
     t.verbose = true
   end
-  task test: ['compile:teek_mgba', 'compile:teek_sdl2']
+  task test: ['mgba:compile', 'sdl2:compile']
 
   desc "Download and build libmgba from source (for macOS / platforms without libmgba-dev)"
   task :deps do
@@ -531,7 +518,7 @@ namespace :docker do
       FileUtils.rm_rf('coverage')
       FileUtils.mkdir_p('coverage/results')
 
-      # Run both test suites with coverage enabled and distinct COVERAGE_NAMEs
+      # Run all three test suites with coverage enabled and distinct COVERAGE_NAMEs
       ENV['COVERAGE'] = '1'
 
       ENV['COVERAGE_NAME'] = 'main'
@@ -541,6 +528,11 @@ namespace :docker do
       Rake::Task['docker:test:sdl2'].reenable
       Rake::Task['docker:build'].reenable
       Rake::Task['docker:test:sdl2'].invoke
+
+      ENV['COVERAGE_NAME'] = 'mgba'
+      Rake::Task['docker:test:mgba'].reenable
+      Rake::Task['docker:build'].reenable
+      Rake::Task['docker:test:mgba'].invoke
 
       # Collate inside Docker (paths match /app/lib/...)
       puts "Collating coverage results..."
