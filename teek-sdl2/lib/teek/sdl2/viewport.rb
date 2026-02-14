@@ -46,7 +46,9 @@ module Teek
       # @param parent [Teek::Widget, String, nil] parent widget (nil for root)
       # @param width [Integer] initial width in pixels
       # @param height [Integer] initial height in pixels
-      def initialize(app, parent: nil, width: 640, height: 480)
+      # @param vsync [Boolean] enable VSync (default: true). Disable for
+      #   applications that manage their own frame pacing (e.g. emulators).
+      def initialize(app, parent: nil, width: 640, height: 480, vsync: true)
         @app = app
         @destroyed = false
 
@@ -73,7 +75,7 @@ module Teek
         handle = app.interp.native_window_handle(@frame.path)
 
         # Create SDL2 renderer embedded in the frame (Layer 2 → Layer 1)
-        @renderer = Teek::SDL2.create_renderer_from_handle(handle)
+        @renderer = Teek::SDL2.create_renderer_from_handle(handle, vsync)
 
         # Register SDL2 event source if this is the first viewport
         Teek::SDL2.register_event_source

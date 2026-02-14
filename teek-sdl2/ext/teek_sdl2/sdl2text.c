@@ -125,6 +125,17 @@ font_initialize(VALUE self, VALUE renderer_obj, VALUE path, VALUE size)
  *
  * Renders text to a new texture using TTF_RenderUTF8_Blended.
  * The returned texture has the exact dimensions of the rendered text.
+ *
+ * The surface is always premultiplied: each pixel's RGB is multiplied
+ * by its alpha, zeroing RGB where alpha is 0. This is necessary because
+ * TTF_RenderUTF8_Blended fills transparent background pixels with
+ * (fg_color, A=0) — without premultiplication, custom blend modes that
+ * read source RGB see the foreground color in transparent regions.
+ *
+ * The default blend mode is the premultiplied-alpha equivalent of
+ * SDL_BLENDMODE_BLEND: src*ONE + dst*ONE_MINUS_SRC_ALPHA. This gives
+ * identical visual results to standard alpha blending and is compatible
+ * with custom blend modes set later via Texture#blend_mode=.
  */
 static VALUE
 font_render_text(int argc, VALUE *argv, VALUE self)
@@ -145,6 +156,31 @@ font_render_text(int argc, VALUE *argv, VALUE self)
         rb_raise(rb_eRuntimeError, "TTF_RenderUTF8_Blended failed: %s", TTF_GetError());
     }
 
+    /* Premultiply alpha: multiply RGB by A/255, zeroing RGB where A=0.
+     * TTF_RenderUTF8_Blended fills background with (fg_color, A=0) which
+     * causes custom blend modes to "see" the foreground color even in
+     * transparent regions. Premultiplying fixes this.
+     * Surface format is ARGB8888: A bits 24-31, R 16-23, G 8-15, B 0-7. */
+    {
+        SDL_LockSurface(surface);
+        Uint32 *pixels = (Uint32 *)surface->pixels;
+        int count = surface->w * surface->h;
+        for (int i = 0; i < count; i++) {
+            Uint32 px = pixels[i];
+            Uint8 a = (px >> 24) & 0xFF;
+            if (a == 0) {
+                pixels[i] = 0;
+            } else if (a < 255) {
+                Uint8 r = (Uint8)(((px >> 16) & 0xFF) * a / 255);
+                Uint8 g = (Uint8)(((px >> 8) & 0xFF) * a / 255);
+                Uint8 b = (Uint8)((px & 0xFF) * a / 255);
+                pixels[i] = ((Uint32)a << 24) | ((Uint32)r << 16) | ((Uint32)g << 8) | b;
+            }
+            /* a == 255: fully opaque, no change needed */
+        }
+        SDL_UnlockSurface(surface);
+    }
+
     SDL_Texture *texture = SDL_CreateTextureFromSurface(ren->renderer, surface);
     int w = surface->w;
     int h = surface->h;
@@ -154,8 +190,14 @@ font_render_text(int argc, VALUE *argv, VALUE self)
         rb_raise(rb_eRuntimeError, "SDL_CreateTextureFromSurface failed: %s", SDL_GetError());
     }
 
-    /* Enable alpha blending on the text texture */
-    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+    /* Premultiplied-alpha blend: src*ONE + dst*(1-srcA).
+     * Visually identical to SDL_BLENDMODE_BLEND for premultiplied data,
+     * and compatible with custom blend modes set later. */
+    SDL_SetTextureBlendMode(texture, SDL_ComposeCustomBlendMode(
+        SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+        SDL_BLENDOPERATION_ADD,
+        SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+        SDL_BLENDOPERATION_ADD));
 
     /* Wrap as a Texture object */
     VALUE klass = rb_const_get(mTeekSDL2, rb_intern("Texture"));
@@ -169,6 +211,21 @@ font_render_text(int argc, VALUE *argv, VALUE self)
     t->renderer_obj = f->renderer_obj;
 
     return obj;
+}
+
+/*
+ * Teek::SDL2::Font#ascent -> Integer
+ *
+ * Maximum pixel ascent of all glyphs in this font — the distance from
+ * the baseline to the top of the tallest glyph. Use this to crop
+ * rendered text to just the visible glyph area (excluding descender
+ * padding).
+ */
+static VALUE
+font_ascent(VALUE self)
+{
+    struct sdl2_font *f = get_font(self);
+    return INT2NUM(TTF_FontAscent(f->font));
 }
 
 /*
@@ -229,6 +286,7 @@ Init_sdl2text(VALUE mTeekSDL2)
     rb_define_method(cFont, "initialize", font_initialize, 3);
     rb_define_method(cFont, "render_text", font_render_text, -1);
     rb_define_method(cFont, "measure", font_measure, 1);
+    rb_define_method(cFont, "ascent", font_ascent, 0);
     rb_define_method(cFont, "destroy", font_destroy, 0);
     rb_define_method(cFont, "destroyed?", font_destroyed_p, 0);
 }

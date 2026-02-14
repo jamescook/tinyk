@@ -66,7 +66,21 @@ module Teek
       # @!method self.poll_events
       #   Pump SDL events and dispatch gamepad events to registered callbacks.
       #   Call this periodically (e.g. every 16–50ms) for responsive input.
+      #
+      #   Note: on macOS, +SDL_PollEvent+ pumps the Cocoa run loop, which can
+      #   steal events from other UI toolkits (e.g. Tk). Use {.update_state}
+      #   instead when you only need fresh controller state.
       #   @return [Integer] number of events processed
+
+      # @!method self.update_state
+      #   Refresh controller state without pumping the platform event loop.
+      #   Calls +SDL_GameControllerUpdate+ → +SDL_JoystickUpdate+ directly,
+      #   bypassing +SDL_PumpEvents+ and the Cocoa run loop on macOS.
+      #
+      #   After calling this, {#button?} and {#axis} return updated values.
+      #   Event callbacks (on_button, on_axis, etc.) will NOT fire — use
+      #   {.poll_events} when you need callbacks.
+      #   @return [nil]
 
       # @!method self.buttons
       #   List of valid button symbols.

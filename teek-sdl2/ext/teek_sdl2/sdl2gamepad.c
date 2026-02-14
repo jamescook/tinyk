@@ -33,6 +33,15 @@ ensure_gc_init(void)
     if (gc_subsystem_initialized) return;
 
     if (!(SDL_WasInit(SDL_INIT_GAMECONTROLLER) & SDL_INIT_GAMECONTROLLER)) {
+        /*
+         * By default SDL drops joystick/gamecontroller events when its
+         * window doesn't have focus. Since we embed SDL inside Tk, other
+         * Tk windows (e.g. Settings) can take focus while the user still
+         * needs gamepad input. Allow events regardless of focus.
+         * https://wiki.libsdl.org/SDL2/SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS
+         */
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+
         if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) < 0) {
             rb_raise(rb_eRuntimeError,
                      "SDL_InitSubSystem(GAMECONTROLLER) failed: %s",
@@ -341,6 +350,24 @@ gamepad_name(VALUE self)
 }
 
 /*
+ * Gamepad#guid -> String
+ *
+ * Returns the GUID string that identifies this controller's model/type.
+ * Same model controllers share the same GUID. Useful as a config key
+ * for persisting per-controller settings.
+ */
+static VALUE
+gamepad_guid(VALUE self)
+{
+    struct sdl2_gamepad *gp = get_gamepad(self);
+    SDL_Joystick *joy = SDL_GameControllerGetJoystick(gp->controller);
+    SDL_JoystickGUID guid = SDL_JoystickGetGUID(joy);
+    char buf[33];
+    SDL_JoystickGetGUIDString(guid, buf, sizeof(buf));
+    return rb_str_new_cstr(buf);
+}
+
+/*
  * Gamepad#attached? -> true or false
  *
  * Returns true if the controller is still physically connected.
@@ -542,6 +569,30 @@ gamepad_s_poll_events(VALUE klass)
         }
     }
     return INT2NUM(count);
+}
+
+/*
+ * Gamepad.update_state -> nil
+ *
+ * Refreshes the internal state of all open game controllers
+ * WITHOUT pumping the platform event loop.
+ *
+ * SDL_PollEvent → SDL_PumpEvents → pumps the Cocoa run loop on macOS,
+ * which steals events from other UI toolkits (e.g. Tk).
+ * SDL_GameControllerUpdate → SDL_JoystickUpdate only (no event pump).
+ * See: https://github.com/libsdl-org/SDL/blob/SDL2/src/joystick/SDL_gamecontroller.c
+ *
+ * After calling this, Gamepad#button? and Gamepad#axis return
+ * updated values. Use this instead of poll_events when you only
+ * need fresh controller state and don't need event callbacks.
+ */
+static VALUE
+gamepad_s_update_state(VALUE klass)
+{
+    if (gc_subsystem_initialized) {
+        SDL_GameControllerUpdate();
+    }
+    return Qnil;
 }
 
 /* ---------------------------------------------------------
@@ -838,6 +889,8 @@ Init_sdl2gamepad(VALUE mTeekSDL2)
     rb_define_singleton_method(cGamepad, "all", gamepad_s_all, 0);
     rb_define_singleton_method(cGamepad, "poll_events",
                                gamepad_s_poll_events, 0);
+    rb_define_singleton_method(cGamepad, "update_state",
+                               gamepad_s_update_state, 0);
     rb_define_singleton_method(cGamepad, "buttons", gamepad_s_buttons, 0);
     rb_define_singleton_method(cGamepad, "axes", gamepad_s_axes, 0);
 
@@ -857,6 +910,7 @@ Init_sdl2gamepad(VALUE mTeekSDL2)
 
     /* Instance methods */
     rb_define_method(cGamepad, "name", gamepad_name, 0);
+    rb_define_method(cGamepad, "guid", gamepad_guid, 0);
     rb_define_method(cGamepad, "attached?", gamepad_attached_p, 0);
     rb_define_method(cGamepad, "button?", gamepad_button_p, 1);
     rb_define_method(cGamepad, "axis", gamepad_axis, 1);

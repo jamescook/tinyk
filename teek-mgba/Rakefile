@@ -1,0 +1,27 @@
+# frozen_string_literal: true
+
+require 'rbconfig'
+
+namespace :mgba do
+  ext_dir = File.expand_path('ext/teek_mgba', __dir__)
+  lib_dir = File.expand_path('lib', __dir__)
+  so_name = "teek_mgba.#{RbConfig::CONFIG['DLEXT']}"
+
+  desc "Compile teek-mgba C extension"
+  task :compile do
+    Dir.chdir(ext_dir) do
+      sh RbConfig.ruby, 'extconf.rb' unless File.exist?('Makefile')
+      sh 'make'
+    end
+    cp File.join(ext_dir, so_name), lib_dir
+  end
+
+  desc "Remove teek-mgba build artifacts"
+  task :clobber do
+    Dir.chdir(ext_dir) do
+      sh 'make clean' if File.exist?('Makefile')
+    end
+    rm_f Dir.glob("#{ext_dir}/{Makefile,*.o,*.so,*.bundle,*.def,mkmf.log}")
+    rm_f File.join(lib_dir, so_name)
+  end
+end

@@ -60,6 +60,7 @@ void Init_sdl2text(VALUE mTeekSDL2);
 void Init_sdl2pixels(VALUE mTeekSDL2);
 void Init_sdl2image(VALUE mTeekSDL2);
 void Init_sdl2mixer(VALUE mTeekSDL2);
+void Init_sdl2audio(VALUE mTeekSDL2);
 void Init_sdl2gamepad(VALUE mTeekSDL2);
 
 #endif /* TEEK_SDL2_H */

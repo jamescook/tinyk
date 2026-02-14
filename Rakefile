@@ -2,6 +2,10 @@ require "bundler/gem_tasks"
 require 'rake/testtask'
 require 'rake/clean'
 
+# Sub-project Rakefiles (define sdl2:compile, mgba:compile)
+import 'teek-sdl2/Rakefile'
+import 'teek-mgba/Rakefile'
+
 # Documentation tasks - all doc gems are in docs_site/Gemfile
 namespace :docs do
   desc "Install docs dependencies (docs_site/Gemfile)"
@@ -108,23 +112,19 @@ task yard: 'docs:yard'
 CLEAN.include('ext/teek/config_list')
 CLOBBER.include('tmp', 'lib/*.bundle', 'lib/*.so', 'ext/**/*.o', 'ext/**/*.bundle', 'ext/**/*.bundle.dSYM')
 CLOBBER.include('teek-sdl2/lib/*.bundle', 'teek-sdl2/lib/*.so', 'teek-sdl2/ext/**/*.o', 'teek-sdl2/ext/**/*.bundle')
+CLOBBER.include('teek-mgba/lib/*.bundle', 'teek-mgba/lib/*.so', 'teek-mgba/ext/**/*.o', 'teek-mgba/ext/**/*.bundle')
 
 # Clean coverage artifacts before test runs to prevent accumulation
 CLEAN.include('coverage/.resultset.json', 'coverage/results')
 
-# Conditionally load rake-compiler
+# rake compile = teek core only (tcltklib)
 if Gem::Specification.find_all_by_name('rake-compiler').any?
   require 'rake/extensiontask'
+
   Rake::ExtensionTask.new do |ext|
     ext.name = 'tcltklib'
     ext.ext_dir = 'ext/teek'
     ext.lib_dir = 'lib'
-  end
-
-  Rake::ExtensionTask.new do |ext|
-    ext.name = 'teek_sdl2'
-    ext.ext_dir = 'teek-sdl2/ext/teek_sdl2'
-    ext.lib_dir = 'teek-sdl2/lib'
   end
 end
 
@@ -219,16 +219,64 @@ def detect_platform
 end
 
 namespace :sdl2 do
-  desc "Compile teek-sdl2 C extension"
-  task compile: 'compile:teek_sdl2'
-
   Rake::TestTask.new(:test) do |t|
     t.libs << 'teek-sdl2/test' << 'teek-sdl2/lib'
     t.test_files = FileList['teek-sdl2/test/**/test_*.rb'] - FileList['teek-sdl2/test/test_helper.rb']
     t.ruby_opts << '-r test_helper'
     t.verbose = true
   end
-  task test: 'compile:teek_sdl2'
+  task test: 'sdl2:compile'
+end
+
+namespace :mgba do
+  Rake::TestTask.new(:test) do |t|
+    t.libs << 'teek-mgba/test' << 'teek-mgba/lib' << 'teek-sdl2/lib'
+    t.test_files = FileList['teek-mgba/test/**/test_*.rb'] - FileList['teek-mgba/test/test_helper.rb']
+    t.ruby_opts << '-r test_helper'
+    t.verbose = true
+  end
+  task test: ['mgba:compile', 'sdl2:compile']
+
+  desc "Download and build libmgba from source (for macOS / platforms without libmgba-dev)"
+  task :deps do
+    require 'fileutils'
+    require 'etc'
+
+    vendor_dir  = File.expand_path('teek-mgba/vendor')
+    mgba_src    = File.join(vendor_dir, 'mgba')
+    build_dir   = File.join(vendor_dir, 'build')
+    install_dir = File.join(vendor_dir, 'install')
+
+    unless File.directory?(mgba_src)
+      FileUtils.mkdir_p(vendor_dir)
+      sh "git clone --depth 1 --branch 0.10.3 https://github.com/mgba-emu/mgba.git #{mgba_src}"
+    end
+
+    FileUtils.mkdir_p(build_dir)
+    cmake_flags = %W[
+      -DBUILD_SHARED=OFF
+      -DBUILD_STATIC=ON
+      -DBUILD_QT=OFF
+      -DBUILD_SDL=OFF
+      -DBUILD_GL=OFF
+      -DBUILD_GLES2=OFF
+      -DBUILD_GLES3=OFF
+      -DBUILD_LIBRETRO=OFF
+      -DSKIP_FRONTEND=ON
+      -DUSE_SQLITE3=OFF
+      -DUSE_ELF=OFF
+      -DUSE_LZMA=OFF
+      -DUSE_EDITLINE=OFF
+      -DCMAKE_INSTALL_PREFIX=#{install_dir}
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    ].join(' ')
+
+    sh "cmake -S #{mgba_src} -B #{build_dir} #{cmake_flags}"
+    sh "cmake --build #{build_dir} -j #{Etc.nprocessors}"
+    sh "cmake --install #{build_dir}"
+
+    puts "libmgba built and installed to #{install_dir}"
+  end
 end
 
 task :default => :compile
@@ -301,6 +349,15 @@ namespace :docker do
     ruby_version == '4.0' ? base : "#{base}-ruby#{ruby_version}"
   end
 
+  def warn_if_containers_running(image_name)
+    running = `docker ps --filter ancestor=#{image_name} --format '{{.ID}} {{.Status}}'`.strip
+    return if running.empty?
+    count = running.lines.size
+    warn "\n⚠  #{count} container(s) already running on #{image_name}:"
+    running.lines.each { |l| warn "   #{l.strip}" }
+    warn "   This usually means a previous test suite is stuck. Consider: docker kill $(docker ps -q --filter ancestor=#{image_name})\n"
+  end
+
   def tcl_version_from_env
     version = ENV.fetch('TCL_VERSION', '9.0')
     unless ['8.6', '9.0'].include?(version)
@@ -345,6 +402,8 @@ namespace :docker do
     require 'fileutils'
     FileUtils.mkdir_p('coverage')
 
+    warn_if_containers_running(image_name)
+
     puts "Running tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
     cmd = "docker run --rm --init"
     cmd += " -v #{Dir.pwd}/coverage:/app/coverage"
@@ -374,6 +433,22 @@ namespace :docker do
     sh cmd
   end
 
+  desc "Force rebuild Docker image (no cache)"
+  task :rebuild do
+    tcl_version = tcl_version_from_env
+    ruby_version = ruby_version_from_env
+    image_name = docker_image_name(tcl_version, ruby_version)
+
+    puts "Rebuilding Docker image (no cache) for Ruby #{ruby_version}, Tcl #{tcl_version}..."
+    cmd = "docker build -f #{DOCKERFILE} --no-cache"
+    cmd += " --label #{DOCKER_LABEL}"
+    cmd += " --build-arg RUBY_VERSION=#{ruby_version}"
+    cmd += " --build-arg TCL_VERSION=#{tcl_version}"
+    cmd += " -t #{image_name} ."
+
+    sh cmd
+  end
+
   desc "Remove dangling Docker images from teek builds"
   task :prune do
     sh "docker image prune -f --filter label=#{DOCKER_LABEL}"
@@ -391,6 +466,8 @@ namespace :docker do
       require 'fileutils'
       FileUtils.mkdir_p('coverage')
 
+      warn_if_containers_running(image_name)
+
       puts "Running teek-sdl2 tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
       cmd = "docker run --rm --init"
       cmd += " -v #{Dir.pwd}/coverage:/app/coverage"
@@ -406,7 +483,32 @@ namespace :docker do
       sh cmd
     end
 
-    desc "Run all tests (teek + teek-sdl2) with coverage and generate report"
+    desc "Run teek-mgba tests in Docker"
+    task mgba: :build do
+      tcl_version = tcl_version_from_env
+      ruby_version = ruby_version_from_env
+      image_name = docker_image_name(tcl_version, ruby_version)
+
+      require 'fileutils'
+      FileUtils.mkdir_p('coverage')
+
+      warn_if_containers_running(image_name)
+
+      puts "Running teek-mgba tests in Docker (Ruby #{ruby_version}, Tcl #{tcl_version})..."
+      cmd = "docker run --rm --init"
+      cmd += " -v #{Dir.pwd}/coverage:/app/coverage"
+      cmd += " -e TCL_VERSION=#{tcl_version}"
+      if ENV['COVERAGE'] == '1'
+        cmd += " -e COVERAGE=1"
+        cmd += " -e COVERAGE_NAME=#{ENV['COVERAGE_NAME'] || 'mgba'}"
+      end
+      cmd += " #{image_name}"
+      cmd += " xvfb-run -a bundle exec rake mgba:test"
+
+      sh cmd
+    end
+
+    desc "Run all tests (teek + teek-sdl2 + teek-mgba) with coverage and generate report"
     task all: 'docker:build' do
       tcl_version = tcl_version_from_env
       ruby_version = ruby_version_from_env
@@ -416,7 +518,7 @@ namespace :docker do
       FileUtils.rm_rf('coverage')
       FileUtils.mkdir_p('coverage/results')
 
-      # Run both test suites with coverage enabled and distinct COVERAGE_NAMEs
+      # Run all three test suites with coverage enabled and distinct COVERAGE_NAMEs
       ENV['COVERAGE'] = '1'
 
       ENV['COVERAGE_NAME'] = 'main'
@@ -426,6 +528,11 @@ namespace :docker do
       Rake::Task['docker:test:sdl2'].reenable
       Rake::Task['docker:build'].reenable
       Rake::Task['docker:test:sdl2'].invoke
+
+      ENV['COVERAGE_NAME'] = 'mgba'
+      Rake::Task['docker:test:mgba'].reenable
+      Rake::Task['docker:build'].reenable
+      Rake::Task['docker:test:mgba'].invoke
 
       # Collate inside Docker (paths match /app/lib/...)
       puts "Collating coverage results..."

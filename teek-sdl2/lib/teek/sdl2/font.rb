@@ -28,15 +28,25 @@ module Teek
     # @see Renderer#draw_text
     class Font
 
-      # @!method render_text(text, r, g, b, a = 255)
+      # @!method render_text(text, r, g, b, a = 255, premultiply = false)
       #   Render a string to a new {Texture} using +TTF_RenderUTF8_Blended+.
       #   The texture has the exact pixel dimensions of the rendered text.
+      #
+      #   When +premultiply+ is true, each pixel's RGB is multiplied by its
+      #   alpha before creating the texture. This is required for custom blend
+      #   modes (from {SDL2.compose_blend_mode}) that read source RGB
+      #   independently of source alpha — without it, the "transparent"
+      #   background of the text surface retains the foreground color,
+      #   causing the entire texture rect to be visible.
+      #
       #   @param text [String] the text to render (UTF-8)
       #   @param r [Integer] red (0–255)
       #   @param g [Integer] green (0–255)
       #   @param b [Integer] blue (0–255)
       #   @param a [Integer] alpha (0–255)
+      #   @param premultiply [Boolean] premultiply alpha for custom blend modes
       #   @return [Texture] a new texture containing the rendered text
+      #   @see https://wiki.libsdl.org/SDL2/SDL_ComposeCustomBlendMode SDL_ComposeCustomBlendMode
 
       # @!method measure(text)
       #   Measure the pixel dimensions the text would occupy when rendered.

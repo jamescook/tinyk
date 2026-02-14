@@ -5,3 +5,4 @@ coverage/
 .git/
 .github/
 .claude/
+teek-mgba/vendor/

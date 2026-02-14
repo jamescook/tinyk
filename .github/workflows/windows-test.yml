@@ -26,11 +26,37 @@ jobs:
         ruby-version: ${{ github.event.inputs.ruby_version }}
         bundler-cache: true
 
-    - name: Install Tcl/Tk via MSYS2
+    - name: Locate MSYS2
+      id: msys2
       shell: bash
       run: |
         MSYS2_ROOT=$(ruby -e "puts RbConfig::CONFIG['prefix']")/msys64
-        echo "MSYS2_ROOT=$MSYS2_ROOT"
+        echo "root=$MSYS2_ROOT" >> "$GITHUB_OUTPUT"
+
+    - name: Snapshot MSYS2 DB version
+      id: msys2-db
+      shell: bash
+      run: |
+        MSYS2_ROOT="${{ steps.msys2.outputs.root }}"
+        # Hash the sync DB to detect when upstream packages change
+        DB_HASH=$(cat "$MSYS2_ROOT"/var/lib/pacman/sync/*.db | sha256sum | cut -c1-16)
+        echo "hash=$DB_HASH" >> "$GITHUB_OUTPUT"
+
+    - name: Restore MSYS2 installed packages
+      id: msys2-cache
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          ${{ steps.msys2.outputs.root }}/var/cache/pacman/pkg
+          ${{ steps.msys2.outputs.root }}/var/lib/pacman/local
+          ${{ steps.msys2.outputs.root }}/ucrt64
+        key: msys2-installed-${{ runner.os }}-ruby${{ github.event.inputs.ruby_version }}-${{ steps.msys2-db.outputs.hash }}-${{ hashFiles('.github/workflows/windows-test.yml') }}
+
+    - name: Install MSYS2 packages
+      if: steps.msys2-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        MSYS2_ROOT="${{ steps.msys2.outputs.root }}"
 
         $MSYS2_ROOT/usr/bin/pacman -S --needed --noconfirm \
           mingw-w64-ucrt-x86_64-tcl \
@@ -40,31 +66,61 @@ jobs:
           mingw-w64-ucrt-x86_64-SDL2_ttf \
           mingw-w64-ucrt-x86_64-SDL2_image \
           mingw-w64-ucrt-x86_64-SDL2_mixer \
+          mingw-w64-ucrt-x86_64-SDL2_gfx \
+          mingw-w64-ucrt-x86_64-mgba \
           mingw-w64-ucrt-x86_64-imagemagick
 
-    - name: Cache compiled extension
-      uses: actions/cache@v4
+    - name: Restore compiled extensions
+      id: ext-cache
+      uses: actions/cache/restore@v5
       with:
-        path: lib/*.so
-        key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'Rakefile', 'Gemfile.lock') }}
+        path: |
+          lib/*.so
+          teek-sdl2/lib/*.so
+          teek-mgba/lib/*.so
+        key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'teek-sdl2/ext/**/*.c', 'teek-sdl2/ext/**/*.h', 'teek-mgba/ext/**/*.c', 'teek-mgba/ext/**/*.h', 'Rakefile', 'Gemfile.lock') }}
 
-    - name: Compile native extension
-      run: bundle exec rake compile
+    - name: Compile native extensions
+      run: bundle exec rake compile sdl2:compile mgba:compile 2>&1 | tee compile-output.log
 
     - name: Run tests
       timeout-minutes: 5
       run: bundle exec rake test TESTOPTS="-v"
-      continue-on-error: true
 
     - name: Run SDL2 tests
       timeout-minutes: 5
       run: bundle exec rake sdl2:test TESTOPTS="-v"
-      continue-on-error: true
 
-    - name: Upload test results
+    - name: Run mGBA tests
+      timeout-minutes: 5
+      run: bundle exec rake mgba:test TESTOPTS="-v"
+
+    - name: Save MSYS2 installed packages
+      if: always() && steps.msys2-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ${{ steps.msys2.outputs.root }}/var/cache/pacman/pkg
+          ${{ steps.msys2.outputs.root }}/var/lib/pacman/local
+          ${{ steps.msys2.outputs.root }}/ucrt64
+        key: msys2-installed-${{ runner.os }}-ruby${{ github.event.inputs.ruby_version }}-${{ steps.msys2-db.outputs.hash }}-${{ hashFiles('.github/workflows/windows-test.yml') }}
+
+    - name: Save compiled extensions
+      if: always() && steps.ext-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          lib/*.so
+          teek-sdl2/lib/*.so
+          teek-mgba/lib/*.so
+        key: windows-ext-ruby${{ github.event.inputs.ruby_version }}-${{ hashFiles('ext/**/*.c', 'ext/**/*.h', 'ext/**/extconf.rb', 'teek-sdl2/ext/**/*.c', 'teek-sdl2/ext/**/*.h', 'teek-mgba/ext/**/*.c', 'teek-mgba/ext/**/*.h', 'Rakefile', 'Gemfile.lock') }}
+
+    - name: Upload build and test logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-windows-ruby${{ github.event.inputs.ruby_version }}
-        path: coverage/
+        name: windows-logs-ruby${{ github.event.inputs.ruby_version }}
+        path: |
+          compile-output.log
+          teek-mgba/ext/teek_mgba/mkmf.log
         retention-days: 7
