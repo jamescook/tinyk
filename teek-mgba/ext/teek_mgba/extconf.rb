@@ -137,14 +137,22 @@ def find_mgba
 
   # 5. MSYS2/MinGW (Windows) — mgba has no .pc file so pkg-config won't find it
   if RbConfig::CONFIG['host_os'] =~ /mingw|mswin/
-    mingw_prefix = RbConfig::CONFIG['prefix']
-    inc = "#{mingw_prefix}/include"
-    lib = "#{mingw_prefix}/lib"
-    if File.exist?("#{inc}/mgba/core/core.h")
-      $INCFLAGS << " -I#{inc}"
-      $LDFLAGS << " -L#{lib}"
-      if check_mgba
-        return true
+    ruby_prefix = RbConfig::CONFIG['prefix']
+    msys2_prefixes = [
+      "#{ruby_prefix}/msys64/ucrt64",  # UCRT64 env inside Ruby's MSYS2
+      "#{ruby_prefix}/msys64/mingw64", # MINGW64 env
+      ruby_prefix,                      # Direct prefix (standalone MSYS2)
+    ]
+
+    msys2_prefixes.each do |prefix|
+      inc = "#{prefix}/include"
+      lib = "#{prefix}/lib"
+      if File.exist?("#{inc}/mgba/core/core.h")
+        $INCFLAGS << " -I#{inc}"
+        $LDFLAGS << " -L#{lib}"
+        if check_mgba
+          return true
+        end
       end
     end
   end
