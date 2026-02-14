@@ -20,6 +20,10 @@ module Teek
         @app.command(:wm, 'geometry', top, geometry) if geometry
         @app.command(:wm, 'resizable', top, 0, 0)
         @app.command(:wm, 'transient', top, '.')
+        # Share the parent's menubar so the system menu doesn't revert to
+        # Tk's default "wish" menu when this window has focus/grab.
+        parent_menu = @app.command('.', :cget, '-menu') rescue nil
+        @app.command(top, :configure, menu: parent_menu) if parent_menu && !parent_menu.empty?
         @app.command(:wm, 'protocol', top, 'WM_DELETE_WINDOW', proc { hide })
         yield if block_given?
         @app.command(:wm, 'withdraw', top)

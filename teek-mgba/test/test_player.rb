@@ -416,12 +416,9 @@ class TestMGBAPlayer < Minitest::Test
         vp = player.instance_variable_get(:@viewport)
         frame = vp.frame.path
 
-        $stderr.puts "DEBUG: frame=\#{frame}, focus=\#{app.command(:focus)}"
-
         # 1. Open Settings via menu (Settings > Video = index 0)
         app.command('.menubar.settings', :invoke, 0)
         app.update
-        $stderr.puts "DEBUG: step1 done"
 
         sw_state = app.command(:wm, 'state', sw_top)
         unless sw_state == 'normal'
@@ -432,7 +429,6 @@ class TestMGBAPlayer < Minitest::Test
         # 2. Try Save States via Emulation menu — should be blocked by @modal_child
         app.command('.menubar.emu', :invoke, 6)
         app.update
-        $stderr.puts "DEBUG: step2 done"
 
         # Picker window may not even exist yet (not built), or should be withdrawn
         sp_state = begin
@@ -445,10 +441,9 @@ class TestMGBAPlayer < Minitest::Test
           exit 1
         end
 
-        # 3. Close Settings via the window's hide method (releases grab + fires on_close)
+        # 3. Close Settings (releases grab + fires on_close)
         player.settings_window.hide
         app.update
-        $stderr.puts "DEBUG: step3 done, modal=\#{player.instance_variable_get(:@modal_child).inspect}"
 
         sw_state = app.command(:wm, 'state', sw_top)
         unless sw_state == 'withdrawn'
@@ -456,22 +451,13 @@ class TestMGBAPlayer < Minitest::Test
           exit 1
         end
 
-        # 4. Now open picker — focus viewport, then press F6
-        # xvfb requires -force to reclaim focus after a grab release
+        # 4. Now open picker — focus -force needed under xvfb after grab release
         app.tcl_eval("focus -force \#{frame}")
         app.update
-        $stderr.puts "DEBUG: step4 focus=\#{app.tcl_eval('focus')}"
         app.command(:event, 'generate', frame, '<KeyPress>', keysym: 'F6')
         app.update
-        $stderr.puts "DEBUG: step4 event sent"
 
-        sp_state = begin
-          app.command(:wm, 'state', sp_top)
-        rescue => e
-          $stderr.puts "DEBUG: sp_top error: \#{e.message}"
-          'withdrawn'
-        end
-        $stderr.puts "DEBUG: step4 sp_state=\#{sp_state}"
+        sp_state = app.command(:wm, 'state', sp_top)
         unless sp_state == 'normal'
           $stderr.puts "FAIL: Picker should be visible after Settings closed, got '\#{sp_state}'"
           exit 1
@@ -480,7 +466,6 @@ class TestMGBAPlayer < Minitest::Test
         # 5. Try opening Settings via menu while picker is open — should be blocked
         app.command('.menubar.settings', :invoke, 0)
         app.update
-        $stderr.puts "DEBUG: step5 done"
 
         sw_state = app.command(:wm, 'state', sw_top)
         unless sw_state == 'withdrawn'
@@ -491,7 +476,6 @@ class TestMGBAPlayer < Minitest::Test
         # 6. Close picker via its close button
         app.command("\#{sp_top}.close_btn", 'invoke')
         app.update
-        $stderr.puts "DEBUG: step6 done"
 
         sp_state = app.command(:wm, 'state', sp_top)
         unless sp_state == 'withdrawn'
