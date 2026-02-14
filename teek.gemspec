@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.homepage      = "https://github.com/jamescook/teek"
   spec.licenses      = ["MIT"]
 
-  spec.files         = Dir.glob("{lib,ext,exe,sample}/**/*").select { |f|
+  spec.files         = Dir.glob("{lib,ext,exe}/**/*").select { |f|
                          File.file?(f) && f !~ /\.(bundle|so|o|log)$/
                        } + %w[Rakefile LICENSE README.md teek.gemspec Gemfile]
   spec.bindir        = "exe"
